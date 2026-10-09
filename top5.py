@@ -10,6 +10,7 @@
 import argparse
 import hashlib
 import json
+import os
 import random
 import re
 import subprocess
@@ -250,7 +251,7 @@ def make(src, streamer="", title="", n=5, seed=None, send=True, cfg=None, enc=No
             m.frame_png([(x, y, w, h, 40)], accent + (255,), frame)
         if not mask.exists():
             m.rounded_mask(w, h, 40, mask)
-        f = CACHE / f"top_seg{i}.mp4"
+        f = CACHE / f"top_{os.getpid()}_seg{i}.mp4"
         for stale in (f.with_suffix(".words.json"), f.with_suffix(".layout.json")):
             stale.unlink(missing_ok=True)
         dur_i = b - a - 0.08
@@ -374,7 +375,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
         e = max(e, s + 0.08)
         size = cfg["sub_size"] if len(txt) <= 11 else int(cfg["sub_size"] * 11 / len(txt))
         ass.append(f"Dialogue: 1,{T(s)},{T(e)},Sub,,0,0,0,,{{\\pos({W // 2},{sub_y})\\fs{size}\\fscx85\\fscy85\\t(0,90,\\fscx100\\fscy100)}}{txt}")
-    (CACHE / "top.ass").write_text("\n".join(ass) + "\n", encoding="utf-8-sig")
+    ass_file = CACHE / f"top_{os.getpid()}.ass"
+    ass_file.write_text("\n".join(ass) + "\n", encoding="utf-8-sig")
 
     # 6) сборка
     groups = [[] for _ in range(len(splits) + 1)]          # куски между баннерами
@@ -429,15 +431,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
               + (f",split={nban}" + "".join(f"[bs{k}]" for k in range(nban)) if nban > 1 else "[bs0]"))
     last = "cv"
     for k, b0 in enumerate(ban_at):
-        fc.append(f"[bs{k}]setpts=PTS-STARTPTS+{b0:.4f}/TB[bv{k}]")
+        # до своего момента баннер идёт прозрачными кадрами: так основное видео не зависит от того,
+        # как конкретная версия ffmpeg ведёт себя, пока второй поток ещё не начался
+        fc.append(f"[bs{k}]setpts=PTS-STARTPTS,tpad=start_duration={b0:.4f}:start_mode=add:color=black@0.0[bv{k}]")
         fc.append(f"[{last}][bv{k}]overlay=0:{ban_y}:enable='between(t,{b0:.4f},{b0 + ban_dur:.4f})':eof_action=pass[wb{k}]")
         last = f"wb{k}"
     fc.append(f"[{last}]null[wb]")
-    fc.append("[wb]ass=top.ass,format=yuv420p[vout]")
+    fc.append(f"[wb]ass={ass_file.name},format=yuv420p[vout]")
 
     out = BASE / "clips" / "ready" / "top" / (re.sub(r'[\\/:*?"<>|]+', " ", src.stem)[:50] + "_top.mp4")
     out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = CACHE / "top_tmp.mp4"
+    tmp = CACHE / f"top_{os.getpid()}_tmp.mp4"
 
     def render(e):
         cmd = ["ffmpeg", "-v", "error", "-y"] + inputs + ["-i", str(banner),
@@ -456,6 +460,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
                "-map_metadata", "-1", "-map_chapters", "-1", "-fflags", "+bitexact",
                "-bsf:v", "filter_units=remove_types=6", "-movflags", "+faststart", str(out)])
     tmp.unlink(missing_ok=True)
+    ass_file.unlink(missing_ok=True)
+    for p_ in parts:
+        Path(p_["file"]).unlink(missing_ok=True)
     if r.returncode != 0:
         print(r.stderr[-600:])
         return None

@@ -1,11 +1,11 @@
 {
-  "version": "2026.10.09 21:34",
-  "time": 1791570840.1665587,
-  "notes": "Patch 0.1",
+  "version": "2026.10.09 21:36",
+  "time": 1791571014.8624866,
+  "notes": "patch 0.2",
   "files": {
     "montage.py": "1f9eb14c5950aae7eba62a45e190954df2e83b18cccb28a501055d7b3bff26a2",
     "review.py": "5ece90b7a10b0a8d86b95836f0b5f21b9506c3762e29cebdae908c413f41c4d7",
-    "top5.py": "78ebbf2d5ef3978a66d4c7ebc5004cf8709dbfeb6670f7df6843bd8e53321da4",
+    "top5.py": "ef82ea678903c6236068834534481a8d8b22eb6b1ca0aa37d7ff8ba9afc82114",
     "fixcam.py": "b4ea7db2c221bda59cb3c026f3ef516b213f7408825eea768b499cf7300b4f7c",
     "clipfinder.py": "21ecb3083d3834103116efd1d538ee261f94d1b47c5e16285848cd62984c780e",
     "updater.py": "021ff5b0be6cb61b5610875e8a4fffbac8faa06b30cb7e750905ead4ec1b11f1"
