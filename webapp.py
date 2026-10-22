@@ -759,7 +759,7 @@ def banners(d):
         png = m.CACHE / f"banner_web_{A.bpv['ver'] % 3}.png"
         info = m.banner_preview(m.banner_for({"banners": {"x": b}}, "cs", "x"), A.cfg, png, 1.5)
         A.bpv["png"] = str(png)
-        return {"ver": A.bpv["ver"], "sec": info["sec"], "dur": round(info["dur"], 1),
+        return {"ver": A.bpv["ver"], "sec": info["sec"], "dur": round(info["dur"], 1), "w": info["w"], "h": info["h"],
                 "file": m.find_banner(b["file"]).name}
     if act == "save":
         rv.save_banners(A.cfg, d["banners"], d.get("use"))

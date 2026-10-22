@@ -312,8 +312,7 @@ def make(src, streamer="", title="", n=5, seed=None, send=True, cfg=None, enc=No
     splits = m.banner_splits(words, [(0.0, content)], content, ban_dur, cfg)     # один баннер или два
     ban_at = [sp + k * ban_dur for k, sp in enumerate(splits)]                   # начало баннеров в готовом ролике
     total = content + ban_dur * len(splits)
-    bx, by, bw, bh = m.banner_crop(_bn)
-    ban_h = int(round(bh * W / bw / 2)) * 2
+    _, (ban_w, ban_h), ban_chain = m.banner_filter(_bn, cfg)
 
     def shift(x):
         return x + ban_dur * sum(1 for sp in splits if x >= sp - 1e-6)
@@ -426,15 +425,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
               + (f",asplit={nban}" + "".join(f"[ba{k}]" for k in range(nban)) if nban > 1 else "[ba0]"))
     achain = "".join(f"[g{gi}a]" + (f"[ba{gi}]" if gi < nban else "") for gi in range(len(groups)))
     fc.append(f"{achain}concat=n={len(groups) + nban}:v=0:a=1[aout]")
-    ban_y = WIN[1] + (WIN[3] - ban_h) // 2
-    fc.append(f"[{nb}:v]crop={bw}:{bh}:{bx}:{by},scale={W}:{ban_h},format=rgba,fps={fps}"
+    ban_y = max(0, WIN[1] + (WIN[3] - ban_h) // 2)
+    ban_x = (W - ban_w) // 2
+    fc.append(f"[{nb}:v]{ban_chain},fps={fps}"
               + (f",split={nban}" + "".join(f"[bs{k}]" for k in range(nban)) if nban > 1 else "[bs0]"))
     last = "cv"
     for k, b0 in enumerate(ban_at):
         # до своего момента баннер идёт прозрачными кадрами: так основное видео не зависит от того,
         # как конкретная версия ffmpeg ведёт себя, пока второй поток ещё не начался
         fc.append(f"[bs{k}]setpts=PTS-STARTPTS,tpad=start_duration={b0:.4f}:start_mode=add:color=black@0.0[bv{k}]")
-        fc.append(f"[{last}][bv{k}]overlay=0:{ban_y}:enable='between(t,{b0:.4f},{b0 + ban_dur:.4f})':eof_action=pass[wb{k}]")
+        fc.append(f"[{last}][bv{k}]overlay={ban_x}:{ban_y}:enable='between(t,{b0:.4f},{b0 + ban_dur:.4f})':eof_action=pass[wb{k}]")
         last = f"wb{k}"
     fc.append(f"[{last}]null[wb]")
     fc.append(f"[wb]ass={ass_file.name},format=yuv420p[vout]")

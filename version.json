@@ -1,16 +1,17 @@
 {
-  "version": "2026.10.22 18:30",
-  "time": 1792693851.8120174,
-  "notes": "Без субтитров, переименование баннеров, проверка Telegram, драки в доте не вырезаются, нарезка стримов и YouTube",
+  "version": "2026.10.22 18:44",
+  "time": 1792694688.461856,
+  "notes": "Баннер: хромакей Авто/Зелёный/Синий с силой, баннер в своём размере без обрезки",
   "files": {
-    "montage.py": "b68c1719b48aad84cdd22c3274a8d68f6034b9c2ca556591788af54a434dfede",
+    "montage.py": "7cba15d10140f982c8ba79095ee70a9b7593c2a823c446c9d89b1da49127900d",
     "review.py": "9db393a6640240108bfb7c3c1a3ac46e0085e17f34a16918785de982daf653c6",
-    "top5.py": "241385c3f110ec248f1fa3c98482a3eff1e55365ef3c4ccd995924ac5cba9c78",
+    "top5.py": "82d6960486bf7e741acbd75e319e8a03a62862cac23fcaf6eee40ee5cb02e7db",
     "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
     "clipfinder.py": "1ad5f5af546ab59c59f9e8ef44a4a821c39252d537848b041dc277cde654151b",
     "updater.py": "71e9f696cfa1e5c31899b40aaf34478ea4f3d29027ba5dd4c48ad2f90e8f4412",
-    "webapp.py": "64fe6fb15f736b99a85fb72f7861baf92642730bb3eefabb343262f90f20de05",
-    "ui.html": "58ae925fbbf69f1e191bac51a1353ef29ed04c60e78d5e4f27f03cabb7e72ccf",
+    "webapp.py": "838cd4321d7f2bd745a1b6a5dbc7085fe5c4c879af10cd4989e266f9d13f9626",
+    "ui.html": "158f629d3c053160e2b6aaaf2265710a15aa44c8e9e68a5a7fe887722355289d",
+    "logo_src.png": "e43b51bb73da86652be2c2adac971e5b39557d895d84a4c2449e9b99f95c1739",
     "highlights.py": "b425d8a6e1d540a5d912348eea60d3a75120af0d6e8312003fa3f8bda1d7ef7d"
   }
 }

@@ -1741,7 +1741,8 @@ def banner_for(cfg, fmt, name=None):
 
 
 def banner_crop(b):
-    """Какую часть кадра баннера брать: заданную вручную или среднюю полосу в четверть экрана."""
+    """Какую часть кадра баннера брать: заданную вручную, весь кадр (size="full", по умолчанию)
+    или, по-старому, среднюю полосу в четверть экрана (size="band")."""
     if b.get("crop"):
         return list(b["crop"])
     try:
@@ -1749,42 +1750,65 @@ def banner_crop(b):
     except Exception:
         bi_ = {"w": 1920, "h": 1080}
     bw = bi_["w"] // 2 * 2
+    if b.get("size", "full") != "band":
+        return [0, 0, bw, bi_["h"] // 2 * 2]
     bh = min(bi_["h"], int(bw * 480 / W)) // 2 * 2
     return [0, (bi_["h"] - bh) // 2 // 2 * 2, bw, bh]
 
 
+def banner_size(b):
+    """Размер баннера в ролике (ширина, высота). Пропорции файла не меняются никогда.
+    Целиком: баннер шире экрана уменьшается до ширины экрана, а меньший остаётся в своём родном размере.
+    Полоса: растягивается на всю ширину, как раньше."""
+    bx, by, bw, bh = banner_crop(b)
+    if b.get("size", "full") == "band":
+        ow = W
+    else:
+        ow = min(W, bw)
+    oh = int(round(bh * ow / bw / 2)) * 2
+    if oh > H * 0.6:                             # слишком высокий баннер (вертикальный файл) ужимаем по высоте
+        oh = int(H * 0.6) // 2 * 2
+        ow = int(round(bw * oh / bh / 2)) * 2
+    return ow // 2 * 2, oh
+
+
 def banner_filter(b, cfg, quiet=False):
-    """Цепочка ffmpeg для кадра баннера (без ускорения): обрезка, размер, хромакей, размытие."""
+    """Цепочка ffmpeg для кадра баннера (без ускорения): обрезка, размер, хромакей, размытие.
+    Возвращает файл, (ширину, высоту) баннера в ролике и цепочку."""
     banner = find_banner(b["file"])
     bx, by, bw, bh = banner_crop(b)
-    ban_h = int(round(bh * W / bw / 2)) * 2
+    ow, oh = banner_size(b)
     key_ = banner_chroma(banner, b.get("chroma", "auto"))
     ck = ""
     if key_:                                     # вырезаем фон баннера и убираем цветную кайму по краям
         kr, kg, kb = int(key_[2:4], 16), int(key_[4:6], 16), int(key_[6:8], 16)
+        sim = float(b.get("chroma_sim") or cfg.get("banner_chroma_sim", 0.12))
+        sim = max(0.02, min(0.5, sim))
         # сравниваем по цвету целиком, а не только по оттенку: иначе тёмно-зелёный фон задевает серые плашки баннера
-        ck = f",colorkey={key_}:{float(cfg.get('banner_chroma_sim', 0.12)):.3f}:0.05"
-        if kg > kr + 60 and kg > kb + 60:
+        ck = f",format=rgba,colorkey={key_}:{sim:.3f}:0.06"
+        if kg > kr + 40 and kg > kb + 40:
             ck += ",despill=type=green"
-        elif kb > kr + 60 and kb > kg + 60:
+        elif kb > kr + 40 and kb > kg + 40:
             ck += ",despill=type=blue"
         if not quiet:
             print(f"  баннер: вырезан фон цвета {key_}")
     bl = f",gblur=sigma={b['blur'] / 5:.2f}" if b.get("blur") else ""
-    return banner, ban_h, f"crop={bw}:{bh}:{bx}:{by},scale={W}:{ban_h}{ck},format=rgba{bl}"
+    return banner, (ow, oh), f"crop={bw}:{bh}:{bx}:{by},scale={ow}:{oh}:flags=lanczos{ck},format=rgba{bl}"
 
 
 def banner_preview(b, cfg, png, t=1.0):
     """Кадр баннера с текущими настройками поверх тёмного фона: для окна выбора баннера."""
-    banner, ban_h, chain = banner_filter(b, cfg, quiet=True)
+    banner, (ow, oh), chain = banner_filter(b, cfg, quiet=True)
     dur = probe(banner)["dur"]
     t = max(0.0, min(t, dur - 0.1))
-    r = run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=0x2a2d36:s={W}x{ban_h + 80}",
+    # шахматка под баннером: сразу видно, где фон вырезан, а где нет
+    r = run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+             f"color=c=0x2a2d36:s={W}x{oh + 80},geq=lum='if(mod(floor(X/24)+floor(Y/24),2),62,40)':cb=128:cr=128",
              "-ss", f"{t:.2f}", "-i", str(banner), "-filter_complex",
-             f"[1:v]{chain}[b];[0:v][b]overlay=0:40:shortest=1,scale=540:-2", "-frames:v", "1", str(png)])
+             f"[1:v]{chain}[b];[0:v][b]overlay={(W - ow) // 2}:40:shortest=1,scale=540:-2", "-frames:v", "1", str(png)])
     if not Path(png).exists():
         raise RuntimeError("не получилось показать баннер: " + (r.stderr or "")[-300:])
-    return {"dur": dur, "sec": round(dur / b["speed"], 1)}
+    return {"dur": dur, "sec": round(dur / b["speed"], 1), "w": ow, "h": oh}
 
 
 def find_banner(name):
@@ -1806,34 +1830,87 @@ def find_banner(name):
                        + (", ".join(near) if near else "нет ни одного"))
 
 
+def _banner_frames(banner):
+    """Несколько кадров баннера (начало, середина, ближе к концу) маленького размера для анализа цвета."""
+    CACHE.mkdir(exist_ok=True)
+    try:
+        dur = probe(banner)["dur"]
+    except Exception:
+        dur = 2.0
+    out = []
+    for t in (0.3, dur * 0.5, dur * 0.8):
+        png = CACHE / f"chroma_{os.getpid()}_{threading.get_ident()}.png"
+        run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(0.0, min(t, dur - 0.1)):.2f}", "-i", str(banner),
+             "-frames:v", "1", "-vf", "scale=320:-2", str(png)])
+        if png.exists():
+            out.append(Image.open(png).convert("RGB"))
+            png.unlink(missing_ok=True)
+    return out
+
+
+def _key_color(pix, want=None):
+    """Самый частый насыщенный цвет среди пикселей. want="green"/"blue" — только такие оттенки."""
+    from collections import Counter
+    cnt = Counter()
+    for r, g, b_ in pix:
+        if want == "green" and not (g > r + 40 and g > b_ + 40):
+            continue
+        if want == "blue" and not (b_ > r + 40 and b_ > g + 30):
+            continue
+        if max(r, g, b_) - min(r, g, b_) < 80:
+            continue
+        cnt[(r // 12, g // 12, b_ // 12)] += 1
+    if not cnt:
+        return None, 0.0
+    (qr, qg, qb), n = cnt.most_common(1)[0]
+    sel = [c for c in pix if (c[0] // 12, c[1] // 12, c[2] // 12) == (qr, qg, qb)]
+    med = [sorted(c[i] for c in sel)[len(sel) // 2] for i in range(3)]
+    return med, n / max(1, len(pix))
+
+
 def banner_chroma(banner, setting="auto"):
     """Цвет хромакея у баннера в виде 0xRRGGBB или None, если вырезать нечего.
-    auto: если у файла нет своей прозрачности, а по краям кадра ровный насыщенный цвет (зелёный, синий и т.п.),
-    этот цвет и вырезается. Можно задать цвет вручную, например "0x00FF00", или выключить: null."""
-    if not setting:
+    auto: если у файла нет своей прозрачности, а по краям кадра много ровного насыщенного цвета, он вырезается.
+    green / blue: найти в баннере свой оттенок зелёного или синего и вырезать его.
+    Можно задать цвет вручную, например "0x00FF00", или выключить: null / "off"."""
+    if not setting or setting == "off":
         return None
-    if setting != "auto":
+    if setting not in ("auto", "green", "blue"):
         return "0x" + str(setting).lstrip("#").replace("0x", "").upper()[:6]
-    fmt_ = run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=pix_fmt",
-                "-of", "csv=p=0", str(banner)]).stdout.strip().lower()
-    if "a" in fmt_.replace("gray", ""):          # rgba, yuva, argb, bgra: прозрачность уже есть
-        return None
-    CACHE.mkdir(exist_ok=True)
-    png = CACHE / f"chroma_{os.getpid()}_{threading.get_ident()}.png"
-    run(["ffmpeg", "-v", "error", "-y", "-ss", "0.3", "-i", str(banner), "-frames:v", "1", "-vf", "scale=320:-2", str(png)])
-    if not png.exists():
-        return None
-    im = Image.open(png).convert("RGB")
-    png.unlink(missing_ok=True)
-    w, h = im.size
-    px = im.load()
-    edge = [px[x, y] for x in range(w) for y in (0, 1, 2, h - 3, h - 2, h - 1)] + \
-           [px[x, y] for y in range(h) for x in (0, 1, 2, w - 3, w - 2, w - 1)]
-    med = [sorted(c[i] for c in edge)[len(edge) // 2] for i in range(3)]
-    same = sum(1 for c in edge if all(abs(c[i] - med[i]) < 28 for i in range(3))) / len(edge)
-    if same < 0.9 or max(med) - min(med) < 90:   # края пёстрые или цвет не насыщенный: это не хромакей
-        return None
-    return "0x{:02X}{:02X}{:02X}".format(*med)
+    key = (str(banner), Path(banner).stat().st_mtime if Path(banner).exists() else 0, setting)
+    if key in _CHROMA_CACHE:
+        return _CHROMA_CACHE[key]
+    res = None
+    if setting == "auto":
+        fmt_ = run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=pix_fmt",
+                    "-of", "csv=p=0", str(banner)]).stdout.strip().lower()
+        if "a" in fmt_.replace("gray", ""):      # rgba, yuva, argb, bgra: прозрачность уже есть
+            _CHROMA_CACHE[key] = None
+            return None
+    best = (None, 0.0)
+    for im in _banner_frames(banner):
+        w, h = im.size
+        px = im.load()
+        if setting == "auto":                    # смотрим рамку кадра: хромакей почти всегда у краёв
+            pix = [px[x, y] for x in range(w) for y in (0, 1, 2, h - 3, h - 2, h - 1)] + \
+                  [px[x, y] for y in range(h) for x in (0, 1, 2, w - 3, w - 2, w - 1)]
+        else:
+            pix = [px[x, y] for x in range(0, w, 2) for y in range(0, h, 2)]
+        med, frac = _key_color(pix, None if setting == "auto" else setting)
+        if med and frac > best[1]:
+            best = (med, frac)
+    med, frac = best
+    if med and (frac >= 0.35 if setting == "auto" else frac >= 0.01):
+        res = "0x{:02X}{:02X}{:02X}".format(*med)
+    elif setting == "green":
+        res = "0x00FF00"
+    elif setting == "blue":
+        res = "0x0000FF"
+    _CHROMA_CACHE[key] = res
+    return res
+
+
+_CHROMA_CACHE = {}
 
 
 SATIS_DIR = BASE / "satisfying"
@@ -1885,12 +1962,11 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
         total = content + ban_dur * len(split_out)
     try:
         _bp = banner_for(cfg, fmt, (force or {}).get("banner"))
-        bx, by, bw, bh = banner_crop(_bp)
+        ban_w, ban_h = banner_size(_bp)
     except Exception:
         if not preview:
             raise
-        bw, bh = 1920, 482                       # для примера кадра баннер не нужен, нужна только его высота
-    ban_h = int(round(bh * W / bw / 2)) * 2
+        ban_w, ban_h = W, 272                    # для примера кадра баннер не нужен, нужна только его высота
 
     # раскладка окон: список (что вырезать из исходника, куда поставить на экране, радиус углов)
     # разметка стримера (камера, обрезка, зона субтитров) сделана для обычного кадра стрима 16:9.
@@ -2277,11 +2353,11 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
             pf.append(f"[sat0][{ns + 1}:v]alphamerge[sat1]")
             pf.append(f"[{last}][sat1]overlay={SAT[0]}:{SAT[1]}[lsat]")
             last = "lsat"
-        by0 = max(0, ban_cy - ban_h // 2)
+        by0 = max(0, min(H - ban_h, ban_cy - ban_h // 2))
         if progress_y:                           # полоска времени: в примере показана на 40%
             pf.append(f"[{last}]drawbox=x=0:y={progress_y}:w=432:h=12:color=0x{accent[0]:02X}{accent[1]:02X}{accent[2]:02X}:t=fill[lpb]")
             last = "lpb"
-        box = "" if vdur else f"drawbox=x=0:y={by0}:w={W}:h={ban_h}:color=white@0.55:t=6,"
+        box = "" if vdur else f"drawbox=x={(W - ban_w) // 2}:y={by0}:w={ban_w}:h={ban_h}:color=white@0.55:t=6,"
         pf.append(f"[{last}]{box}ass={ass.name}:fontsdir=../fonts,scale=540:960[vout]")
         if vdur:
             outp = str(Path(preview["video_out"]).resolve())
@@ -2396,7 +2472,8 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
         fc.append(f"color=c=0x{accent[0]:02X}{accent[1]:02X}{accent[2]:02X}:s={W}x12:r={fps}[pbar]")
         fc.append(f"[{last}][pbar]overlay=x='-w+w*t/{total:.3f}':y={progress_y}:shortest=1[lpb]")
         last = "lpb"
-    ban_y = ban_cy - ban_h // 2
+    ban_y = max(0, min(H - ban_h, ban_cy - ban_h // 2))
+    ban_x = (W - ban_w) // 2
     _, _, ban_chain = banner_filter(bnr, cfg)
     fc.append(f"[{nb}:v]{ban_chain},{sp_v}fps={fps}"
               + (f",split={nban}" + "".join(f"[bs{k}]" for k in range(nban)) if nban > 1 else "[bs0]"))
@@ -2404,7 +2481,7 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
         # до своего момента баннер идёт прозрачными кадрами: так основное видео не зависит от того,
         # как конкретная версия ffmpeg ведёт себя, пока второй поток ещё не начался
         fc.append(f"[bs{k}]setpts=PTS-STARTPTS,tpad=start_duration={b0:.4f}:start_mode=add:color=black@0.0[bv{k}]")
-        fc.append(f"[{last}][bv{k}]overlay=0:{ban_y}:enable='between(t,{b0:.4f},{b0 + ban_dur:.4f})':"
+        fc.append(f"[{last}][bv{k}]overlay={ban_x}:{ban_y}:enable='between(t,{b0:.4f},{b0 + ban_dur:.4f})':"
                   f"eof_action=pass[wb{k}]")
         last = f"wb{k}"
     fc.append(f"[{last}]null[wb]")

@@ -691,21 +691,28 @@ async function openBanners(){const r=await api("banners",{act:"get"});const B=JS
     E.innerHTML=`<div class="kv"><span class="label" style="margin:0">Название</span><input class="inp" id="b_name" value="${esc(sel)}"><span></span></div>
       <div class="kv"><span class="label" style="margin:0">Ускорение</span><input type="range" id="b_sp" min="1" max="2" step="0.05" value="${b.speed||1}"><b id="b_spv"></b></div>
       <div class="kv"><span class="label" style="margin:0">Размытие</span><input type="range" id="b_bl" min="0" max="30" step="1" value="${b.blur||0}"><b id="b_blv"></b></div>
-      <div class="kv"><span class="label" style="margin:0">Фон</span><div class="seg"><button data-c="auto">Вырезать зелёный/синий</button><button data-c="">Не вырезать</button></div><span></span></div>
+      <div class="kv"><span class="label" style="margin:0">Хромакей</span><div class="seg" id="b_ck"><button data-c="auto">Авто</button><button data-c="green">Зелёный</button><button data-c="blue">Синий</button><button data-c="off">Не вырезать</button></div><span></span></div>
+      <div class="kv" id="b_simrow"><span class="label" style="margin:0">Сила</span><input type="range" id="b_sim" min="0.04" max="0.35" step="0.01" value="${b.chroma_sim||0.12}"><b id="b_simv"></b></div>
+      <div class="kv"><span class="label" style="margin:0">Размер</span><div class="seg" id="b_sz"><button data-s="full">Как в файле</button><button data-s="band">Полоса на всю ширину</button></div><span></span></div>
       <div class="bprev" id="b_pv"><span class="spin"></span></div><p class="note" id="b_note"></p>
       <div class="flex" style="margin-top:8px"><button class="btn sm" id="b_main">★ Сделать основным</button></div>`;
     const lab=()=>{E.querySelector("#b_spv").textContent=(+b.speed||1).toFixed(2)+"x";E.querySelector("#b_blv").textContent=b.blur?b.blur:"выкл";
-      E.querySelectorAll(".seg button").forEach(x=>x.classList.toggle("on",(x.dataset.c||null)===(b.chroma??"auto")||(!x.dataset.c&&!b.chroma)));};lab();
+      const ck=b.chroma===null||b.chroma===""||b.chroma===false?"off":(b.chroma||"auto");
+      E.querySelectorAll("#b_ck button").forEach(x=>x.classList.toggle("on",x.dataset.c===ck));
+      E.querySelector("#b_simrow").style.display=ck==="off"?"none":"";E.querySelector("#b_simv").textContent=Math.round((+b.chroma_sim||0.12)*100);
+      E.querySelectorAll("#b_sz button").forEach(x=>x.classList.toggle("on",x.dataset.s===(b.size||"full")));};lab();
     E.querySelector("#b_sp").oninput=e=>{b.speed=+e.target.value;lab();prev(400);};E.querySelector("#b_bl").oninput=e=>{b.blur=+e.target.value;lab();prev(400);};
-    E.querySelectorAll(".seg button").forEach(x=>x.onclick=()=>{b.chroma=x.dataset.c||null;lab();prev(0);});
+    E.querySelectorAll("#b_ck button").forEach(x=>x.onclick=()=>{b.chroma=x.dataset.c;lab();prev(0);});
+    E.querySelector("#b_sim").oninput=e=>{b.chroma_sim=+e.target.value;lab();prev(400);};
+    E.querySelectorAll("#b_sz button").forEach(x=>x.onclick=()=>{b.size=x.dataset.s;b.crop=null;lab();prev(0);});
     E.querySelector("#b_main").onclick=()=>{use=sel;list();toast("Основной баннер: "+sel);};
     E.querySelector("#b_name").onchange=e=>{const n=e.target.value.trim();if(!n||B[n])return;B[n]=B[sel];delete B[sel];if(use===sel)use=n;sel=n;list();};prev(0);};
   const prev=ms=>{clearTimeout(pvT);pvT=setTimeout(async()=>{const my=++gen,b=B[sel];if(!b)return;const P=w.querySelector("#b_pv");P.style.opacity=.6;
     const r=await api("banners",{act:"preview",banner:b});if(my!==gen||!w.isConnected)return;P.style.opacity=1;
     if(r.error){P.innerHTML=`<p class="note warn" style="padding:16px">${esc(r.error)}</p>`;return}
-    P.innerHTML=`<img src="/banner.png?k=${K}&v=${r.ver}" alt="">`;w.querySelector("#b_note").textContent=`Файл ${r.file} · в ролике баннер идёт ${r.sec} с (без ускорения ${r.dur} с)`;},ms);};
+    P.innerHTML=`<img src="/banner.png?k=${K}&v=${r.ver}" alt="">`;w.querySelector("#b_note").textContent=`Файл ${r.file} · в ролике ${r.w}×${r.h} · идёт ${r.sec} с (без ускорения ${r.dur} с)`;},ms);};
   w.querySelector("#b_add").onclick=async()=>{const r=await api("banners",{act:"add"});if(r.error)return toast(r.error,false);if(r.cancel)return;
-    let n=r.name,i=2;while(B[n])n=r.name+" "+i++;B[n]={file:r.file,speed:1,blur:0,crop:null,chroma:"auto"};if(!use)use=n;sel=n;list();editor();};
+    let n=r.name,i=2;while(B[n])n=r.name+" "+i++;B[n]={file:r.file,speed:1,blur:0,crop:null,chroma:"auto",chroma_sim:0.12,size:"full"};if(!use)use=n;sel=n;list();editor();};
   w.querySelector("#b_save").onclick=async()=>{const r=await api("banners",{act:"save",banners:B,use});if(r.error)return toast(r.error,false);
     S.init.banners=r.banners;S.banner=r.use;buildMenus();w.close();};
   list();editor();}
