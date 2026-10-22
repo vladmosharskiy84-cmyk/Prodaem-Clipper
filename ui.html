@@ -502,9 +502,10 @@ function loadFontPreviews(){const L=S.init.font_lib||{};const fam={};Object.valu
 function optList(k){if(k==="style")return S.init.styles;if(k==="anim")return S.init.anims;if(k==="font")return[["","Как в настройках"],...S.init.fonts.map(f=>[f,f])];
   const b=S.init.banners;return b.length?b.map(x=>[x.name,x.name+" · "+(+x.speed).toFixed(2).replace(/\.?0+$/,"")+"x"+(x.blur?", размытие "+x.blur:"")]):[["","нет баннеров"]];}
 function buildMenus(){$$(".field").forEach(f=>{const k=f.dataset.k,m=f.querySelector(".menu");
-  m.innerHTML=optList(k).map(([v,l])=>`<button data-v="${esc(v)}"${k==="font"?fontCss(v):""}>${esc(l)}</button>`).join("")+(k==="banner"?'<button data-v="__edit" style="color:var(--a2)">Баннеры офферов…</button>':"");
+  m.innerHTML=optList(k).map(([v,l])=>`<button data-v="${esc(v)}"${k==="font"?fontCss(v):""}>${esc(l)}</button>`).join("")+(k==="banner"&&S.init.banners.length?'<button data-v="__rename" style="color:var(--a2)">Переименовать…</button>':"")
+    +(k==="banner"?'<button data-v="__edit" style="color:var(--a2)">Баннеры офферов…</button>':"");
   f.querySelector(".sel").onclick=e=>{e.stopPropagation();const was=f.classList.contains("open");$$(".field").forEach(x=>x.classList.remove("open"));if(!was)f.classList.add("open");};
-  m.onclick=e=>{const b=e.target.closest("button");if(!b)return;f.classList.remove("open");if(b.dataset.v==="__edit")return openBanners();pick(k,b.dataset.v,true);};
+  m.onclick=e=>{const b=e.target.closest("button");if(!b)return;f.classList.remove("open");if(b.dataset.v==="__edit")return openBanners();if(b.dataset.v==="__rename")return renameBanner();pick(k,b.dataset.v,true);};
   pick(k,k==="style"?S.style:k==="font"?S.font:k==="anim"?S.anim:(S.banner||optList("banner")[0][0]),false);});}
 function pick(k,v,user){S[k]=v;const f=$(`.field[data-k="${k}"]`),o=optList(k).find(x=>x[0]===v)||optList(k)[0];f.querySelector(".sel").textContent=o[1];
   f.querySelectorAll(".menu button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));
@@ -630,6 +631,11 @@ async function openSettings(){const v=await api("settings",{act:"get"});
   w.querySelectorAll("[data-check]").forEach(b=>b.onclick=async()=>{const id=b.dataset.check,res=w.querySelector("#r_"+id),vs=vals[id].map(k=>w.querySelector("#s_"+k).value.trim());
     if(vs.some(x=>!x)){res.className="res bad";res.textContent="сначала заполни поле";return}res.className="res";res.innerHTML='<span class="spin"></span>';
     const r=await api("settings",{act:"check",kind:id,values:vs});res.className="res "+(r.ok?"ok":"bad");res.textContent=r.text||r.error;});
+  const tgRow=w.querySelector("#r_telegram").parentElement;const tb=document.createElement("button");tb.className="btn sm";tb.textContent="Проверить отправку";
+  tgRow.insertBefore(tb,w.querySelector("#r_telegram"));
+  tb.onclick=async()=>{const res=w.querySelector("#r_telegram");const tok=w.querySelector("#s_tg").value.trim();
+    if(!tok){res.className="res bad";res.textContent="сначала вставь токен бота";return}res.className="res";res.innerHTML='<span class="spin"></span>';
+    const r=await api("settings",{act:"tg_test",tg:tok});res.className="res "+(r.ok?"ok":"bad");res.textContent=r.text||r.error;};
   w.querySelector("#s_topics").onclick=async()=>{const res=w.querySelector("#r_topics");const tok=w.querySelector("#s_tg").value.trim();
     if(!tok){res.className="res bad";res.textContent="сначала вставь токен бота";return}res.className="res";res.innerHTML='<span class="spin"></span>';
     await api("settings",{act:"tg",tg:tok});const r=await api("tg_topics");res.className="res "+(r.ok?"ok":"bad");res.textContent=r.text||r.error;};
@@ -661,6 +667,16 @@ $("#strm").onclick=async()=>{const r=await api("streamers",{act:"list"});
   const say=(t,ok)=>{const m=w.querySelector("#st_msg");m.className="res "+(ok?"ok":"bad");m.textContent=t||"";};
   const add=async()=>{const i=w.querySelector("#st_in");if(!i.value.trim())return;const r=await api("streamers",{act:"add",login:i.value});draw(r.list);say(r.error||r.msg,!r.error);if(!r.error)i.value="";};
   w.querySelector("#st_add").onclick=add;w.querySelector("#st_in").onkeydown=e=>{if(e.key==="Enter")add();};draw(r.list||[]);w.querySelector("#st_in").focus();};
+
+/* переименовать баннер прямо из меню */
+function renameBanner(){const old=S.banner;if(!old)return;
+  const w=modal(`<h3>Переименовать баннер</h3><p class="sub">Так он будет называться в меню и в окне баннеров. Файл баннера не меняется.</p>
+    <input class="inp" id="rn_in" value="${esc(old)}" maxlength="40" autocomplete="off" style="margin-bottom:12px">
+    <div class="flex"><button class="btn small-primary" id="rn_ok">Сохранить</button><span class="res bad" id="rn_msg"></span></div>`,"narrow");
+  const inp=w.querySelector("#rn_in");inp.focus();inp.select();
+  const go=async()=>{const r=await api("banners",{act:"rename",old,new:inp.value});if(r.error){w.querySelector("#rn_msg").textContent=r.error;return}
+    S.init.banners=r.banners;S.banner=r.name;buildMenus();toast("Баннер теперь называется «"+r.name+"»");w.close();};
+  w.querySelector("#rn_ok").onclick=go;inp.onkeydown=e=>{if(e.key==="Enter")go();};}
 
 /* баннеры */
 async function openBanners(){const r=await api("banners",{act:"get"});const B=JSON.parse(JSON.stringify(r.banners||{}));let use=r.use&&B[r.use]?r.use:Object.keys(B)[0]||null,sel=use,pvT=null,gen=0;

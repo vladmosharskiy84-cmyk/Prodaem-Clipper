@@ -1200,7 +1200,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 SUB_ANIMS = {"pop": "Выпрыгивание", "karaoke": "Фраза с подсветкой слова", "bounce": "Падение с отскоком",
-             "wiggle": "Покачивание", "glow": "Неоновое свечение"}
+             "wiggle": "Покачивание", "glow": "Неоновое свечение", "none": "Без субтитров"}
 
 
 def sub_events(timed, anim, sub_y, cfg, st_, accent, banner_starts):
@@ -1208,6 +1208,8 @@ def sub_events(timed, anim, sub_y, cfg, st_, accent, banner_starts):
     bgr = lambda c: "&H{:02X}{:02X}{:02X}&".format(c[2], c[1], c[0])
     x, y, base = W // 2, sub_y, cfg["sub_size"]
     out = []
+    if anim == "none":                               # ролик без субтитров: речь всё равно нужна для вырезки пауз
+        return out
     if anim != "karaoke":
         for s, e, txt, _, _ in timed:
             size = base if len(txt) <= 11 else int(base * 11 / len(txt))
@@ -1300,17 +1302,55 @@ TG_TOKEN = BASE / "telegram_token.txt"
 TG_CHAT = BASE / "telegram_chat.txt"
 
 
-def tg_chat_id(token):
-    if TG_CHAT.exists():
-        return TG_CHAT.read_text(encoding="utf-8-sig").strip()
+def tg_chat_id(token, fresh=False):
+    """Чат, куда слать ролики: тот, кто последним написал боту. Запоминается вместе с ботом:
+    если вставили токен другого бота, чат ищется заново."""
+    bot = token.split(":")[0]
+    if TG_CHAT.exists() and not fresh:
+        saved = TG_CHAT.read_text(encoding="utf-8-sig").strip()
+        if ":" not in saved and saved:
+            return saved                         # старый формат: чат уже работал, оставляем
+        if saved.split(":", 1)[0] == bot:
+            return saved.split(":", 1)[1]
     import requests
     r = requests.get(f"https://api.telegram.org/bot{token}/getUpdates", timeout=30).json()
-    chats = [u["message"]["chat"]["id"] for u in r.get("result", []) if "message" in u]
-    if not chats:
-        print("  Telegram: напиши своему боту любое сообщение (например /start) и запусти ещё раз")
+    if not r.get("ok"):
+        print(f"  Telegram не принял токен: {r.get('description', '')}")
         return None
-    TG_CHAT.write_text(str(chats[-1]), encoding="utf-8")
+    chats = [(u.get("message") or u.get("my_chat_member") or {}).get("chat", {}).get("id") for u in r.get("result", [])]
+    chats = [c for c in chats if c]
+    if not chats:
+        print("  Telegram: бот не видит твой чат. Открой бота в Telegram, нажми «Запустить» или напиши /start, "
+              "потом в программе «Настройки и ключи» → «Проверить отправку»")
+        return None
+    TG_CHAT.write_text(f"{bot}:{chats[-1]}", encoding="utf-8")
     return str(chats[-1])
+
+
+def tg_test(token):
+    """Пробная отправка: находит чат с ботом заново и шлёт сообщение. (успех, текст для окна)."""
+    import requests
+    try:
+        me = requests.get(f"https://api.telegram.org/bot{token}/getMe", timeout=20).json()
+        if not me.get("ok"):
+            return False, "Telegram не принял токен: проверь, что скопирован целиком"
+        if TG_TOPICS.exists():
+            t = json.loads(TG_TOPICS.read_text(encoding="utf-8"))
+            chat, thread = t["chat_id"], t.get("clips")
+        else:
+            chat, thread = tg_chat_id(token, fresh=True), None
+        if not chat:
+            return False, (f"Бот @{me['result'].get('username', '')} не видит твой чат: открой его в Telegram, "
+                           "нажми «Запустить» (/start) и нажми проверку ещё раз")
+        data = {"chat_id": chat, "text": "PRODAEM CLIPPER: проверка связи. Сюда будут приходить готовые ролики ✓"}
+        if thread:
+            data["message_thread_id"] = thread
+        r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", data=data, timeout=20).json()
+        if r.get("ok"):
+            return True, f"Отправил проверочное сообщение от @{me['result'].get('username', '')}: посмотри в Telegram"
+        return False, "Telegram не дал отправить: " + str(r.get("description", ""))[:160]
+    except Exception as e:
+        return False, f"нет связи с Telegram: {e}"
 
 
 TG_TOPICS = BASE / "telegram_topics.json"
@@ -1369,6 +1409,7 @@ def tg_send(path, p, hashtags, kind="clips"):
     """Отправляет готовый ролик файлом (без сжатия). kind: "clips" для найденных клипов,
     "manual" для своего видео; если настроены темы, каждый вид идёт в свою. True, если ушло."""
     if not TG_TOKEN.exists():
+        print("  в Telegram не отправлено: не введён токен бота (Настройки и ключи → Telegram)")
         return False
     try:
         import requests
@@ -1380,6 +1421,11 @@ def tg_send(path, p, hashtags, kind="clips"):
         else:
             chat = tg_chat_id(token)
         if not chat:
+            print("  в Telegram не отправлено: бот не знает, куда слать")
+            return False
+        size = Path(path).stat().st_size / 1e6
+        if size > 49:
+            print(f"  в Telegram не отправлено: ролик {size:.0f} МБ, а бот может отправить только до 50 МБ")
             return False
         warn = "ВНИМАНИЕ: на экране игра, партнёрка может не засчитать\n" if p.get("game_on_screen") else ""
         cap = (warn + f"Потенциал: {p['potential']}/100 ({potential_label(p['potential'])})\n"

@@ -698,6 +698,13 @@ def settings(d):
         return {"cid": clean(c.get("client_id")), "sec": clean(c.get("client_secret")),
                 "claude": m.KEY_FILE.read_text(encoding="utf-8-sig").strip() if m.KEY_FILE.exists() else "",
                 "tg": m.TG_TOKEN.read_text(encoding="utf-8-sig").strip() if m.TG_TOKEN.exists() else ""}
+    if act == "tg_test":                         # пробная отправка: сохраняет токен и шлёт сообщение
+        tok = (d.get("tg") or "").strip()
+        if not tok:
+            return {"ok": False, "text": "сначала вставь токен бота"}
+        m.TG_TOKEN.write_text(tok, encoding="ascii", errors="ignore")
+        ok, text = m.tg_test(tok)
+        return {"ok": ok, "text": text}
     if act == "tg":                              # токен бота сохраняется сразу, чтобы можно было привязать темы
         if d.get("tg"):
             m.TG_TOKEN.write_text(d["tg"].strip(), encoding="ascii", errors="ignore")
@@ -758,6 +765,19 @@ def banners(d):
         rv.save_banners(A.cfg, d["banners"], d.get("use"))
         A.toast("Баннеры сохранены")
         return {"banners": banners_short(), "use": A.cfg.get("banner_use")}
+    if act == "rename":
+        old, new = d.get("old"), (d.get("new") or "").strip()[:40]
+        lst = {k: dict(v) for k, v in m.banner_list(A.cfg).items()}
+        if old not in lst:
+            return {"error": "такого баннера нет"}
+        if not new:
+            return {"error": "впиши новое название"}
+        if new != old and new in lst:
+            return {"error": "баннер с таким названием уже есть"}
+        lst = {(new if k == old else k): v for k, v in lst.items()}       # порядок в списке сохраняется
+        use = A.cfg.get("banner_use")
+        rv.save_banners(A.cfg, lst, new if use in (old, None) else use)
+        return {"banners": banners_short(), "use": A.cfg.get("banner_use"), "name": new}
     if act == "use":
         if d.get("name") in m.banner_list(A.cfg):
             rv.save_banners(A.cfg, m.banner_list(A.cfg), d["name"])

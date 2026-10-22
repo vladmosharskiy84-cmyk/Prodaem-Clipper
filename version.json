@@ -1,16 +1,16 @@
 {
-  "version": "2026.10.22 21:23",
-  "time": 1792693408.6527839,
-  "notes": "patch 0.3",
+  "version": "2026.10.22 18:30",
+  "time": 1792693851.8120174,
+  "notes": "Без субтитров, переименование баннеров, проверка Telegram, драки в доте не вырезаются, нарезка стримов и YouTube",
   "files": {
-    "montage.py": "ae3722e592dc4d54d689e35185c2aab3baf8eca4bed6f2581a783dfe063fa8d6",
+    "montage.py": "b68c1719b48aad84cdd22c3274a8d68f6034b9c2ca556591788af54a434dfede",
     "review.py": "9db393a6640240108bfb7c3c1a3ac46e0085e17f34a16918785de982daf653c6",
     "top5.py": "241385c3f110ec248f1fa3c98482a3eff1e55365ef3c4ccd995924ac5cba9c78",
     "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
     "clipfinder.py": "1ad5f5af546ab59c59f9e8ef44a4a821c39252d537848b041dc277cde654151b",
     "updater.py": "71e9f696cfa1e5c31899b40aaf34478ea4f3d29027ba5dd4c48ad2f90e8f4412",
-    "webapp.py": "badabcf3221991e519a9a6ea3384ab53d209914f5e16270ec8c1f27cb98d7e2a",
-    "ui.html": "aa68f01f154c66ba40c5bcd1a8a6281759417118d02b066bf79a03acf20e6021",
+    "webapp.py": "64fe6fb15f736b99a85fb72f7861baf92642730bb3eefabb343262f90f20de05",
+    "ui.html": "58ae925fbbf69f1e191bac51a1353ef29ed04c60e78d5e4f27f03cabb7e72ccf",
     "highlights.py": "b425d8a6e1d540a5d912348eea60d3a75120af0d6e8312003fa3f8bda1d7ef7d"
   }
 }
