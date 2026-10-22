@@ -1,13 +1,16 @@
 {
-  "version": "2026.10.09 21:36",
-  "time": 1791571014.8624866,
-  "notes": "patch 0.2",
+  "version": "2026.10.22 21:23",
+  "time": 1792693408.6527839,
+  "notes": "patch 0.3",
   "files": {
-    "montage.py": "1f9eb14c5950aae7eba62a45e190954df2e83b18cccb28a501055d7b3bff26a2",
-    "review.py": "5ece90b7a10b0a8d86b95836f0b5f21b9506c3762e29cebdae908c413f41c4d7",
-    "top5.py": "ef82ea678903c6236068834534481a8d8b22eb6b1ca0aa37d7ff8ba9afc82114",
-    "fixcam.py": "b4ea7db2c221bda59cb3c026f3ef516b213f7408825eea768b499cf7300b4f7c",
-    "clipfinder.py": "21ecb3083d3834103116efd1d538ee261f94d1b47c5e16285848cd62984c780e",
-    "updater.py": "021ff5b0be6cb61b5610875e8a4fffbac8faa06b30cb7e750905ead4ec1b11f1"
+    "montage.py": "ae3722e592dc4d54d689e35185c2aab3baf8eca4bed6f2581a783dfe063fa8d6",
+    "review.py": "9db393a6640240108bfb7c3c1a3ac46e0085e17f34a16918785de982daf653c6",
+    "top5.py": "241385c3f110ec248f1fa3c98482a3eff1e55365ef3c4ccd995924ac5cba9c78",
+    "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
+    "clipfinder.py": "1ad5f5af546ab59c59f9e8ef44a4a821c39252d537848b041dc277cde654151b",
+    "updater.py": "71e9f696cfa1e5c31899b40aaf34478ea4f3d29027ba5dd4c48ad2f90e8f4412",
+    "webapp.py": "badabcf3221991e519a9a6ea3384ab53d209914f5e16270ec8c1f27cb98d7e2a",
+    "ui.html": "aa68f01f154c66ba40c5bcd1a8a6281759417118d02b066bf79a03acf20e6021",
+    "highlights.py": "b425d8a6e1d540a5d912348eea60d3a75120af0d6e8312003fa3f8bda1d7ef7d"
   }
 }

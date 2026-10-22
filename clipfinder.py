@@ -10,11 +10,13 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
+import os
 from pathlib import Path
 
 import requests
 
-BASE = Path(__file__).resolve().parent
+BASE = Path(os.environ.get("CLIPPER_DATA") or Path(__file__).resolve().parent).resolve()   # папка профиля с данными
+CODE = Path(__file__).resolve().parent                     # папка с программой
 CONFIG_FILE = BASE / "config.json"
 STREAMERS_FILE = BASE / "streamers.txt"
 SEEN_FILE = BASE / "seen.json"

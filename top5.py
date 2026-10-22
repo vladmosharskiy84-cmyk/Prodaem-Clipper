@@ -19,7 +19,8 @@ from pathlib import Path
 
 import montage as m
 
-BASE = Path(__file__).resolve().parent
+BASE = Path(os.environ.get("CLIPPER_DATA") or Path(__file__).resolve().parent).resolve()   # папка профиля с данными
+CODE = Path(__file__).resolve().parent                     # папка с программой
 CACHE = BASE / "cache"
 W, H = 1080, 1920
 AREA = (80, 620, 920, 900)                # область под фрагмент: x, y, ширина, высота (рамка встаёт по самому фрагменту)
@@ -305,14 +306,13 @@ def make(src, streamer="", title="", n=5, seed=None, send=True, cfg=None, enc=No
         t += p["dur"]
     content = t
     words = [{"s": w["s"] + st, "e": w["e"] + st, "t": w["t"]} for p, st in zip(parts, starts) for w in p["words"]]
-    banner = BASE / cfg["banner_talk"]
-    if not banner.exists():
-        sys.exit(f"Нет файла баннера: {banner}")
+    _bn = m.banner_for(cfg, "talk")
+    banner = m.find_banner(_bn["file"])
     ban_dur = m.probe(banner)["dur"]
     splits = m.banner_splits(words, [(0.0, content)], content, ban_dur, cfg)     # один баннер или два
     ban_at = [sp + k * ban_dur for k, sp in enumerate(splits)]                   # начало баннеров в готовом ролике
     total = content + ban_dur * len(splits)
-    bx, by, bw, bh = cfg["banner_talk_crop"]
+    bx, by, bw, bh = m.banner_crop(_bn)
     ban_h = int(round(bh * W / bw / 2)) * 2
 
     def shift(x):
@@ -468,7 +468,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
         return None
 
     final_title = head.capitalize()
-    hashtags = (f"#{streamer.lower()} " if streamer else "") + "#топ #стример #twitch #нарезки"
+    hashtags = (f"#{streamer.lower()} " if streamer else "") + "#топ " + m.base_tags()
     p = {"streamer": streamer or "стример", "format": "top", "duration": round(total, 2), "final_title": final_title,
          "description": "", "potential": 50, "order": [i + 1 for i in order], "labels": labels, "source": str(src)}
     out.with_suffix(".txt").write_text(f"{final_title}\n\n{hashtags}\n", encoding="utf-8")

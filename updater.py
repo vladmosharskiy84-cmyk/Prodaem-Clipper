@@ -20,7 +20,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 URL_FILE = BASE / "update_url.txt"
 STATE_FILE = BASE / "update_state.json"
-FILES = ["montage.py", "review.py", "top5.py", "fixcam.py", "clipfinder.py", "updater.py"]
+FILES = ["montage.py", "review.py", "top5.py", "fixcam.py", "clipfinder.py", "updater.py", "webapp.py", "ui.html", "logo_src.png", "highlights.py"]
 
 
 def base_url():
@@ -70,7 +70,8 @@ def check():
     files = {k: v for k, v in (info.get("files") or {}).items() if k in FILES}
     changed = [n for n, h in files.items() if not (BASE / n).exists() or sha(BASE / n) != h]
     newer = float(info.get("time", 0)) > applied_time()
-    return {"available": bool(changed) and newer, "version": str(info.get("version", "")),
+    missing = any(not (BASE / n).exists() for n in changed)   # новый файл программы, которого ещё нет
+    return {"available": bool(changed) and (newer or missing), "version": str(info.get("version", "")),
             "notes": str(info.get("notes", "")), "changed": changed, "files": files, "time": info.get("time", 0)}
 
 
@@ -110,7 +111,8 @@ def make_release(notes=""):
     files = {}
     for name in FILES:
         if (BASE / name).exists():
-            py_compile.compile(str(BASE / name), cfile=str(BASE / "cache" / (name + "c")), doraise=True)
+            if name.endswith(".py"):                 # проверяем на ошибки только код, ui.html и картинки как есть
+                py_compile.compile(str(BASE / name), cfile=str(BASE / "cache" / (name + "c")), doraise=True)
             shutil.copy2(BASE / name, rel / name)
             files[name] = sha(BASE / name)
     now = time.time()

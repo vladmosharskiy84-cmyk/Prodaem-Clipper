@@ -17,12 +17,15 @@ import os
 import re
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-BASE = Path(__file__).resolve().parent
+BASE = Path(os.environ.get("CLIPPER_DATA") or Path(__file__).resolve().parent).resolve()   # папка профиля с данными
+CODE = Path(__file__).resolve().parent                     # папка с программой
 CFG_FILE = BASE / "montage.json"
 PASSPORTS = BASE / "passports.jsonl"
 CACHE = BASE / "cache"
@@ -32,6 +35,31 @@ BAD = re.compile(
     r"^(?:за|на|по|вы|у|до|от|отъ|разъ|объ|при|про|недо|долбо|съ|въ|подъ|пере|ни|не)?"
     r"(?:ху[йеёяию]|пизд|[её]б(?:а|у|и|л|н|ё|е|ыр|т)|бля(?:$|[дт])|сук[аиуе]$|сучк|"
     r"мудак|мудил|пид[оа]р|залуп|гандон|шлюх)", re.I)
+
+
+BAD_EN = re.compile(r"(?:fuck|shit|bitch|cunt|asshole|nigg|fagg?ot|retard|pussy|cocksuck|whore|slut|bastard|"
+                    r"dickhead|motherf)", re.I)
+_LANG = []
+
+
+def lang():
+    """Язык профиля из настроек: ru или en. От него зависят фильтр мата, подсказки Claude и хэштеги."""
+    if not _LANG:
+        try:
+            _LANG.append(str(json.loads(CFG_FILE.read_text(encoding="utf-8")).get("language", "ru")).lower())
+        except Exception:
+            _LANG.append("ru")
+    return _LANG[0]
+
+
+def base_tags():
+    try:                                         # свои хэштеги профиля, например для доты
+        t = json.loads(CFG_FILE.read_text(encoding="utf-8")).get("tags")
+        if t:
+            return str(t)
+    except Exception:
+        pass
+    return "#cs2 #counterstrike #twitch #clips" if lang() == "en" else "#стример #twitch #нарезки"
 
 
 def run(cmd, **kw):
@@ -58,7 +86,7 @@ def loudness(path):
 
 def censor(word):
     core = re.sub(r"[^\w-]", "", word)
-    if len(core) >= 3 and BAD.search(core.lower()):
+    if len(core) >= 3 and (BAD_EN if lang() == "en" else BAD).search(core.lower()):
         return core[0] + "*" * (len(core) - 2) + core[-1]
     return core
 
@@ -197,7 +225,7 @@ def fix_title(title, words):
         phrase.append(t)
         if len(phrase) >= 5:
             break
-    return " ".join(phrase) if len(phrase) >= 2 else " ".join(tw)
+    return " ".join(censor(x) or x for x in phrase) if len(phrase) >= 2 else " ".join(tw)
 
 
 KEY_FILE = BASE / "claude_key.txt"
@@ -219,6 +247,24 @@ PROMPT = """Ты придумываешь заголовки для коротк
   шутка или эмоция и законченность)."""
 
 
+PROMPT_EN = """You write titles for short vertical videos (TikTok) cut from streamers' clips.
+Streamer: {streamer}. Below is a speech transcript of the clip (it may contain recognition errors).
+
+Transcript:
+{text}
+
+Return ONLY JSON, no explanations, no markdown:
+{{"title": "...", "description": "...", "score": 0}}
+
+Rules:
+- title: 3-6 words in English, to the point: what happened or what the streamer said. It should hook,
+  but must not lie or promise what is not in the clip. No profanity, no emoji, no quotes, no trailing
+  period. You may start with the streamer's name. Do not mention sites, cases, promo codes or betting.
+- description: one short phrase for the video description, up to 80 characters, no hashtags.
+- score: 1 to 10, how well the clip works as a standalone video (a clear thought, joke or emotion,
+  and a sense of completeness)."""
+
+
 def ai_meta(words, streamer, cfg):
     """Заголовок, описание и оценка клипа через Claude API. None, если ключа нет или запрос не удался."""
     if not KEY_FILE.exists() or len(words) < 4:
@@ -235,7 +281,8 @@ def ai_meta(words, streamer, cfg):
                      "content-type": "application/json"},
             json={"model": cfg.get("claude_model", "claude-haiku-4-5"), "max_tokens": 300,
                   "messages": [{"role": "user",
-                                "content": PROMPT.format(streamer=streamer or "неизвестен", text=text)}]},
+                                "content": (PROMPT_EN if lang() == "en" else PROMPT).format(
+                                    streamer=streamer or "unknown", text=text)}]},
             timeout=60)
         if r.status_code != 200:
             print(f"  Claude API ответил {r.status_code}: {r.text[:200]}")
@@ -873,20 +920,51 @@ def talk_crop(streamer, sw, sh, cfg):
 
 
 # ---------- вырезка тишины и точка баннера ----------
-def keep_segments(words, dur, fmt, cfg):
+def audio_activity(clip):
+    """Громкость звука клипа каждые 0.1 с (дБ) и обычный уровень. None, если звук не прочитался."""
+    import numpy as np
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(clip), "-vn", "-ac", "1", "-ar", "8000", "-f", "f32le", "-"],
+                         capture_output=True).stdout
+    a = np.frombuffer(raw, dtype=np.float32)
+    if a.size < 8000:
+        return None
+    k = 800
+    n = a.size // k
+    db = 20 * np.log10(np.sqrt((a[:n * k].reshape(n, k) ** 2).mean(axis=1)) + 1e-6)
+    return db, float(np.median(db))
+
+
+def is_active(act, a, b, share=0.35, below=5.0):
+    """Идёт ли в куске [a, b] что-то громкое: драка, способности, крики. Тишину можно вырезать, это нет."""
+    if act is None or b - a <= 0:
+        return False
+    db, med = act
+    i, j = int(a * 10), max(int(a * 10) + 1, int(b * 10))
+    part = db[i:j]
+    return part.size > 0 and float((part > med - below).mean()) >= share
+
+
+def keep_segments(words, dur, fmt, cfg, clip=None):
     if not words:
         return [(0.0, dur)]
     max_gap = cfg["max_gap_talk"] if fmt == "talk" else cfg["max_gap_cs"]
     pad = cfg["keep_gap"] / 2
     lead = cfg["lead_talk"] if fmt == "talk" else cfg["lead_cs"]
+    # в игре стример молчит именно в самые яркие моменты: драку по звуку игры не вырезаем
+    act = audio_activity(clip) if (clip is not None and fmt != "talk" and cfg.get("keep_loud_game", True)) else None
     segs = []
     a, b = words[0]["s"], words[0]["e"]
     for w in words[1:]:
-        if w["s"] - b > max_gap:
+        if w["s"] - b > max_gap and not is_active(act, b, w["s"]):
             segs.append((a, b))
             a = w["s"]
         b = max(b, w["e"])
     segs.append((a, b))
+    if act is not None:                              # начало до первых слов и конец после последних, если там громко
+        if is_active(act, 0.0, segs[0][0]):
+            segs[0] = (0.0, segs[0][1])
+        if is_active(act, segs[-1][1], dur):
+            segs[-1] = (segs[-1][0], dur)
     out = []
     for i, (a, b) in enumerate(segs):
         a2 = max(0.0, a - (lead if i == 0 else pad))
@@ -916,6 +994,55 @@ def out_to_src(t, segs):
             return a + (t - acc)
         acc += b - a
     return segs[-1][1]
+
+
+def zoom_events(clip, max_n=None):
+    """Моменты для зума: где стример резко громче обычного (крик, смех, реакция).
+    [(секунда клипа, сила 0..1, тряска)]. Тряска только на самых громких."""
+    import numpy as np
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(clip), "-vn", "-ac", "1", "-ar", "8000", "-f", "f32le", "-"],
+                         capture_output=True).stdout
+    a = np.frombuffer(raw, dtype=np.float32)
+    if a.size < 8000 * 3:
+        return []
+    k = 800                                          # шаг 0.1 с
+    n = a.size // k
+    db = 20 * np.log10(np.sqrt((a[:n * k].reshape(n, k) ** 2).mean(axis=1)) + 1e-6)
+    sm = np.convolve(db, np.ones(3) / 3, mode="same")
+    base = float(np.median(sm))
+    out, last = [], -99.0
+    max_n = max_n or max(1, int(n / 10 / 7))         # не чаще одного зума на 7 секунд в среднем
+    order = np.argsort(-sm)
+    for i in order:
+        ex = float(sm[i] - base)
+        if ex < 8 or len(out) >= max_n:
+            break
+        t = i / 10
+        if t < 0.8 or any(abs(t - x[0]) < 3.5 for x in out):
+            continue
+        # начало всплеска: зум должен прийти вместе с криком, а не после
+        j = i
+        while j > 0 and sm[j - 1] > base + ex * 0.5 and i - j < 8:
+            j -= 1
+        out.append((round(float(j) / 10, 2), float(min(1.0, (ex - 8) / 10 + 0.4)), bool(ex >= 15)))
+    return sorted(out)
+
+
+def zoom_expr(events):
+    """Выражения ffmpeg для зума и тряски окна по времени ролика: (масштаб, сдвиг x, сдвиг y)."""
+    if not events:
+        return None
+    bumps = []
+    for t, amp, _ in events:
+        bumps.append(f"{0.10 + 0.08 * amp:.3f}*clip((t-{t - 0.08:.2f})/0.14\\,0\\,1)*clip(({t + 1.35:.2f}-t)/0.55\\,0\\,1)")
+    z = "1+" + "+".join(bumps)
+    sh = [f"clip((t-{t:.2f})/0.05\\,0\\,1)*clip(({t + 0.45:.2f}-t)/0.3\\,0\\,1)" for t, _, k in events if k]
+    if sh:
+        env = "(" + "+".join(sh) + ")"
+        sx, sy = f"14*sin(t*53)*{env}", f"10*cos(t*47)*{env}"
+    else:
+        sx = sy = "0"
+    return z, sx, sy
 
 
 def pick_split(words, segs, cfg):
@@ -1014,7 +1141,7 @@ def write_ass(path, title, words, segs, split_out, ban_dur, total, sub_y, cfg,
     l1, l2 = split_title(title)
     longest = max(len(l1), len(l2), 1)
     tsize = title_size if longest <= 18 else max(36, int(title_size * 18 / longest))
-    font = cfg["font"]
+    font, bold = font_face(cfg["font"])
     head = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {W}
@@ -1023,9 +1150,9 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Title,{font},{tsize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,6,0,8,{cfg.get('side_margin', 80)},{cfg.get('side_margin', 80)},{title_y},1
-Style: Sub,{font},{cfg['sub_size']},{s_fg},{s_fg},{s_tail}
-Style: Tag,{font},40,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,3,10,0,5,0,0,0,1
+Style: Title,{font},{tsize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,{bold},0,0,0,100,100,0,0,1,6,0,8,{cfg.get('side_margin', 80)},{cfg.get('side_margin', 80)},{title_y},1
+Style: Sub,{font},{cfg['sub_size']},{s_fg},{s_fg},{s_tail.replace(",1,0,0,0,100,", f",{bold},0,0,0,100,", 1)}
+Style: Tag,{font},40,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,{bold},0,0,0,100,100,0,0,3,10,0,5,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1045,6 +1172,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         o = src_to_out(t, segs)
         return o + ban_dur * sum(1 for sp in splits if o >= sp - 1e-6)
 
+    anim = cfg.get("sub_anim") or "pop"
+    timed = []                                       # (начало, конец, текст, пауза перед словом)
     for i, w in enumerate(words):
         txt = censor(w["t"]).upper()
         if not txt:
@@ -1064,10 +1193,80 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 e = b0
         if e - s < 0.08:
             e = s + 0.08
-        size = cfg["sub_size"] if len(txt) <= 11 else int(cfg["sub_size"] * 11 / len(txt))
-        fx = rf"{{\pos({W // 2},{sub_y})\fs{size}\fscx85\fscy85\t(0,90,\fscx100\fscy100)}}"
-        lines.append(f"Dialogue: 1,{ass_time(s)},{ass_time(e)},Sub,,0,0,0,,{fx}{txt}")
+        gap = (w["s"] - words[i - 1]["e"]) if i else 9.0
+        timed.append((s, e, txt, gap, w["t"][-1:] in ".!?…,"))
+    lines += sub_events(timed, anim, sub_y, cfg, st_, accent, starts)
     path.write_text(head + "\n".join(lines) + "\n", encoding="utf-8-sig")
+
+
+SUB_ANIMS = {"pop": "Выпрыгивание", "karaoke": "Фраза с подсветкой слова", "bounce": "Падение с отскоком",
+             "wiggle": "Покачивание", "glow": "Неоновое свечение"}
+
+
+def sub_events(timed, anim, sub_y, cfg, st_, accent, banner_starts):
+    """Строки субтитров для выбранной анимации. timed: [(начало, конец, слово, пауза перед ним, конец фразы)]."""
+    bgr = lambda c: "&H{:02X}{:02X}{:02X}&".format(c[2], c[1], c[0])
+    x, y, base = W // 2, sub_y, cfg["sub_size"]
+    out = []
+    if anim != "karaoke":
+        for s, e, txt, _, _ in timed:
+            size = base if len(txt) <= 11 else int(base * 11 / len(txt))
+            if anim == "bounce":
+                fx = (rf"{{\move({x},{y - 80},{x},{y},0,150)\fs{size}\fscx118\fscy118\t(0,150,\fscx100\fscy100)"
+                      rf"\t(150,220,\fscx104\fscy92)\t(220,300,\fscx100\fscy100)}}")
+            elif anim == "wiggle":
+                fx = (rf"{{\pos({x},{y})\fs{size}\fscx88\fscy88\frz-7\t(0,110,\fscx100\fscy100\frz5)"
+                      rf"\t(110,220,\frz-3)\t(220,330,\frz0)}}")
+            elif anim == "glow":
+                fx = (rf"{{\pos({x},{y})\fs{size}\bord6\3c{bgr(accent)}\blur4\fscx85\fscy85"
+                      rf"\t(0,90,\fscx100\fscy100)\t(0,250,\blur2)}}")
+            else:
+                fx = rf"{{\pos({x},{y})\fs{size}\fscx85\fscy85\t(0,90,\fscx100\fscy100)}}"
+            out.append(f"Dialogue: 1,{ass_time(s)},{ass_time(e)},Sub,,0,0,0,,{fx}{txt}")
+        return out
+    # фраза из 2–4 слов на экране, слово, которое сейчас звучит, крупнее и другого цвета
+    chunks, cur = [], []
+    for item in timed:
+        s, e, txt, gap, endp = item
+        if cur and (gap > 0.45 or len(cur) >= 4 or sum(len(t[2]) for t in cur) + len(txt) > 17
+                    or any(cur[-1][0] < b0 <= s for b0 in banner_starts)):
+            chunks.append(cur)
+            cur = []
+        cur.append(item)
+        if endp:
+            chunks.append(cur)
+            cur = []
+    if cur:
+        chunks.append(cur)
+    fg = st_.get("fg") or (255, 230, 0)
+    box = st_.get("box")
+    if box:                                          # плашки: у звучащего слова своя яркая плашка и тёмные буквы
+        hl_box = (255, 230, 0) if abs(box[0] - 255) + abs(box[1] - 230) + abs(box[2]) > 120 else (255, 255, 255)
+        hl, rest = (10, 10, 10), fg
+    else:
+        hl_box = None
+        hl = fg if sum(fg) < 700 else (255, 230, 0)
+        rest = (255, 255, 255)
+    for ch in chunks:
+        chars = sum(len(t[2]) for t in ch) + len(ch) - 1
+        size = base if chars <= 13 else max(54, int(base * 13 / chars))
+        end_all = ch[-1][1]
+        for k, (s, e, txt, _, _) in enumerate(ch):
+            e2 = ch[k + 1][0] if k + 1 < len(ch) else end_all
+            if e2 - s < 0.05:
+                continue
+            parts = []
+            for j, t in enumerate(ch):
+                if j == k:
+                    bx = rf"\3c{bgr(hl_box)}" if hl_box else ""
+                    parts.append(rf"{{\c{bgr(hl)}{bx}\fscx100\fscy100\t(0,80,\fscx112\fscy112)}}{t[2]}")
+                else:
+                    bx = rf"\3c{bgr(box)}" if box else ""
+                    parts.append(rf"{{\c{bgr(rest)}{bx}\fscx100\fscy100}}{t[2]}")
+            intro = rf"\fscx90\fscy90\t(0,90,\fscx100\fscy100)" if k == 0 else ""
+            fx = rf"{{\pos({x},{y})\fs{size}{intro}}}"
+            out.append(f"Dialogue: 1,{ass_time(s)},{ass_time(e2)},Sub,,0,0,0,,{fx}" + " ".join(parts))
+    return out
 
 
 # ---------- потенциал ролика ----------
@@ -1156,7 +1355,7 @@ def tg_setup():
         sys.exit("Не хватает команды: " + " и ".join(need[k] for k in missing)
                  + ". Отправь её в нужной теме и запусти настройку ещё раз.")
     if found["clips"] == found["manual"]:
-        sys.exit("Обе команды отправлены в одну тему. Отправь /clips и /my в разных темах.")
+        print("Обе команды в одной теме: клипы и своё видео будут приходить туда вместе.")
     saved = {"chat_id": group["id"], "clips": found["clips"], "manual": found["manual"]}
     TG_TOPICS.write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
     for k, label in (("clips", "клипы"), ("manual", "своё видео")):
@@ -1187,15 +1386,37 @@ def tg_send(path, p, hashtags, kind="clips"):
                f"Стример: {p['streamer']} | {p['format']} | {p['duration']} с\n\n"
                f"{p['final_title']}\n{p.get('description') or ''}\n\n{hashtags}")[:1000]
         name = re.sub(r'[\\/:*?"<>|]+', " ", f"{p['potential']:03d}_{p['streamer']}_{p['final_title']}")[:80] + ".mp4"
-        with open(path, "rb") as f:
-            data = {"chat_id": chat, "caption": cap}
-            if thread:
-                data["message_thread_id"] = thread
-            r = requests.post(f"https://api.telegram.org/bot{token}/sendDocument",
-                              data=data, files={"document": (name, f, "video/mp4")}, timeout=600)
+        data = {"chat_id": chat, "caption": cap}
+        if thread:
+            data["message_thread_id"] = thread
+        for attempt in range(1, 5):              # связь с Telegram иногда рвётся посреди загрузки: пробуем ещё
+            try:
+                with open(path, "rb") as f:
+                    r = requests.post(f"https://api.telegram.org/bot{token}/sendDocument",
+                                      data=data, files={"document": (name, f, "video/mp4")}, timeout=600)
+            except (requests.ConnectionError, requests.Timeout) as e:
+                if attempt == 4:
+                    raise
+                print(f"  Telegram: связь оборвалась, попытка {attempt + 1} из 4 через {attempt * 10} с")
+                time.sleep(attempt * 10)
+                continue
+            if r.status_code == 429 or r.status_code >= 500:
+                if attempt == 4:
+                    break
+                wait = 15
+                try:
+                    wait = int(r.json().get("parameters", {}).get("retry_after", 15)) + 1
+                except Exception:
+                    pass
+                print(f"  Telegram занят ({r.status_code}), жду {wait} с")
+                time.sleep(wait)
+                continue
+            break
         if r.status_code != 200:
             print(f"  Telegram ответил {r.status_code}: {r.text[:200]}")
             return False
+        if attempt > 1:
+            print("  Telegram: отправлено со второй попытки" if attempt == 2 else f"  Telegram: отправлено с попытки {attempt}")
         return True
     except Exception as e:
         print(f"  в Telegram не отправилось: {e}")
@@ -1223,13 +1444,120 @@ def encoder_args(enc):
 STYLES = {"classic": "Рамка", "neon": "Неон", "gradient": "Градиент", "efir": "Эфир", "glass": "Стекло",
           "split": "Сплит", "sticker": "Стикер", "full": "На весь экран"}
 GEO_STYLES = ("split", "sticker", "full")        # этим стилям нужны два окна: камера и игра/контент
-FONTS = ["Arial", "Arial Black", "Impact", "Bahnschrift", "Segoe UI Black", "Comic Sans MS", "Verdana",
-         "Trebuchet MS", "Tahoma", "Georgia", "Courier New"]
+SYS_FONTS = ["Arial", "Arial Black", "Impact", "Bahnschrift", "Segoe UI Black", "Comic Sans MS", "Verdana",
+             "Trebuchet MS", "Tahoma", "Georgia", "Courier New"]
+# шрифты как в трендовых роликах: бесплатные (лицензия OFL), все с русскими буквами.
+# Скачиваются с Google Fonts при первом запуске в папку fonts.
+FONT_LIB = {"Montserrat Black": ("Montserrat", 900), "Montserrat ExtraBold": ("Montserrat", 800),
+            "Rubik Black": ("Rubik", 900), "Rubik Bold": ("Rubik", 700), "Golos Text Black": ("Golos Text", 900),
+            "Unbounded Black": ("Unbounded", 900), "Russo One": ("Russo One", 400), "Oswald Bold": ("Oswald", 700),
+            "Dela Gothic One": ("Dela Gothic One", 400), "Exo 2 Black": ("Exo 2", 900), "Inter Black": ("Inter", 900),
+            "Manrope ExtraBold": ("Manrope", 800), "Anton": ("Anton", 400), "Comfortaa Bold": ("Comfortaa", 700),
+            "Ubuntu Bold": ("Ubuntu", 700), "Lobster": ("Lobster", 400), "Pacifico": ("Pacifico", 400),
+            "Press Start 2P": ("Press Start 2P", 400)}
+FONT_DIR = BASE / "fonts"
+FONT_MAP = BASE / "fonts_map.json"            # имя в программе -> имя шрифта внутри файла (не в папке fonts:
+                                              # оттуда ffmpeg читает только сами шрифты)
+
+
+def _font_map():
+    try:
+        return json.loads(FONT_MAP.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def has_cyrillic(path):
+    """Есть ли в шрифте русские буквы: сравниваем «Ж» с заведомо пустым символом."""
+    from PIL import ImageFont
+    f = ImageFont.truetype(str(path), 60)
+    return f.getmask("Ж").getbbox() != f.getmask("\U000FFFFD").getbbox() and \
+        bytes(f.getmask("Ж")) != bytes(f.getmask("\U000FFFFD"))
+
+
+def get_font(key, log=None):
+    """Скачивает шрифт из библиотеки, если его ещё нет. Возвращает имя для субтитров или None."""
+    mp = _font_map()
+    if key in mp and (FONT_DIR / mp[key]["file"]).exists():
+        return mp[key]["name"] if mp[key].get("ok") else None
+    if key not in FONT_LIB or time.time() - _FONT_FAIL.get(key, 0) < 600:
+        return None                                  # недавно не скачался: не ждём сеть на каждом примере
+    fam, wt = FONT_LIB[key]
+    try:
+        import requests
+        css = requests.get(f"https://fonts.googleapis.com/css?family={fam.replace(' ', '+')}:{wt}&subset=cyrillic,latin",
+                           headers={"User-Agent": "Mozilla/4.0"}, timeout=20).text
+        urls = re.findall(r"url\((https://[^)]+?\.ttf)\)", css)
+        if not urls:
+            raise RuntimeError("Google Fonts не дал файл")
+        data = requests.get(urls[0], timeout=60).content
+        if data[:4] not in (b"\x00\x01\x00\x00", b"true", b"OTTO"):
+            raise RuntimeError("скачался не шрифт")
+        FONT_DIR.mkdir(parents=True, exist_ok=True)
+        fn = re.sub(r"\W+", "_", key) + ".ttf"
+        (FONT_DIR / fn).write_bytes(data)
+        from PIL import ImageFont
+        family, style = ImageFont.truetype(str(FONT_DIR / fn), 20).getname()
+        name = family if (style or "Regular") in ("Regular", "Normal", "") or style in family else f"{family} {style}"
+        ok = has_cyrillic(FONT_DIR / fn)
+        mp = _font_map()
+        mp[key] = {"file": fn, "name": name, "ok": ok}
+        FONT_MAP.write_text(json.dumps(mp, ensure_ascii=False, indent=1), encoding="utf-8")
+        if log:
+            log(f"шрифт {key}: " + ("готов" if ok else "без русских букв, не используется"))
+        return name if ok else None
+    except Exception as e:
+        _FONT_FAIL[key] = time.time()
+        if log:
+            log(f"шрифт {key} не скачался: {e}")
+        return None
+
+
+_FONT_FAIL = {}
+
+
+def ensure_fonts(log=None):
+    for k in FONT_LIB:
+        get_font(k, log)
+
+
+def available_fonts():
+    """Шрифты для выбора: скачанные из библиотеки (с русскими буквами) и системные."""
+    mp = _font_map()
+    lib = [k for k in FONT_LIB if not (k in mp and not mp[k].get("ok"))]
+    return lib + SYS_FONTS
+
+
+def font_face(key):
+    """(имя для субтитров, жирность 0/1): у шрифтов из библиотеки жирность уже своя, поддельная не нужна."""
+    if key in FONT_LIB:
+        name = get_font(key)
+        return (name, 0) if name else ("Arial", 1)
+    return key, 1
+
+
+FONTS = list(FONT_LIB) + SYS_FONTS
 
 
 def _lin(c1, c2, size):
     g = Image.linear_gradient("L").rotate(-45).resize(size)
     return Image.composite(Image.new("RGB", size, c2), Image.new("RGB", size, c1), g)
+
+
+def neon_seam(y, accent):
+    """Тонкая неоновая линия на стыке окон: мягкая тень на обе картинки, свечение цвета профиля и яркая середина.
+    Рисуется поверх видео (слой надписей), поэтому свечение ложится на камеру и игру."""
+    def bgr(c):
+        return "&H{:02X}{:02X}{:02X}&".format(c[2], c[1], c[0])
+    light = tuple(int(v + (255 - v) * 0.6) for v in accent)
+
+    def bar(h, blur, col, alpha):
+        return ("{\\an7\\pos(0,%d)\\bord0\\shad0\\blur%g\\1c%s\\1a&H%02X&\\p1}m -40 0 l 1120 0 l 1120 %d l -40 %d{\\p0}"
+                % (y - h // 2, blur, bgr(col), alpha, h, h))
+    return [bar(76, 22, (0, 0, 0), 0x60),      # тень от линии на обе картинки
+            bar(40, 20, accent, 0x28),         # широкое свечение
+            bar(9, 5, accent, 0x00),           # плотное свечение
+            bar(3, 0.7, light, 0x00)]          # яркая тонкая середина
 
 
 def style_png(style, boxes, accent, path, rot=None, progress_y=None):
@@ -1299,10 +1627,7 @@ def style_png(style, boxes, accent, path, rot=None, progress_y=None):
                                                 outline=(255, 255, 255, 160), width=3)
         im = Image.alpha_composite(im, panel)
     elif style == "split":
-        d = ImageDraw.Draw(im)
-        bs = sorted(boxes, key=lambda b: b[1])
-        for a, b in zip(bs, bs[1:]):
-            d.rectangle((0, a[1] + a[3], W, b[1] - 1), fill=accent + (255,))
+        pass                                     # линия на стыке рисуется поверх окон (neon_seam)
     elif style == "full":
         col = Image.new("L", (1, H), 0)
         for yy in range(H):
@@ -1329,6 +1654,140 @@ def style_png(style, boxes, accent, path, rot=None, progress_y=None):
         frame_png(boxes, accent + (255,), path)
         return
     im.save(path)
+
+
+def banner_list(cfg):
+    """Все баннеры офферов: {название: {"file", "speed", "blur", "crop", "chroma"}}.
+    Если списка ещё нет (старые настройки), он собирается из banner_talk и banner_cs."""
+    lst = cfg.get("banners")
+    if isinstance(lst, dict) and lst:
+        return lst
+    out = {}
+    for fmt in ("cs", "talk"):
+        f = cfg.get(f"banner_{fmt}")
+        if not f:
+            continue
+        name = Path(str(f)).stem.split(".")[0]
+        if name in out:
+            continue
+        out[name] = {"file": f, "speed": float(cfg.get("banner_speed", 1.0)),
+                     "blur": cfg.get(f"banner_{fmt}_blur", 0) or 0, "crop": cfg.get(f"banner_{fmt}_crop"),
+                     "chroma": cfg.get(f"banner_{fmt}_chroma", "auto")}
+    return out
+
+
+def banner_for(cfg, fmt, name=None):
+    """Настройки баннера для ролика: выбранный в окне, иначе отмеченный как основной, иначе старые banner_talk/cs."""
+    lst = banner_list(cfg)
+    name = name or cfg.get("banner_use")
+    if name in lst:
+        b = dict(lst[name])
+    else:
+        b = {"file": cfg.get(f"banner_{fmt}"), "speed": float(cfg.get("banner_speed", 1.0)),
+             "blur": cfg.get(f"banner_{fmt}_blur", 0) or 0, "crop": cfg.get(f"banner_{fmt}_crop"),
+             "chroma": cfg.get(f"banner_{fmt}_chroma", "auto")}
+    if not b.get("file"):
+        raise RuntimeError("не выбран баннер оффера: добавь его кнопкой «Баннеры офферов…»")
+    b["speed"] = min(2.0, max(0.5, float(b.get("speed") or 1.0)))
+    b["blur"] = max(0, min(40, float(b.get("blur") or 0)))
+    b.setdefault("chroma", "auto")
+    return b
+
+
+def banner_crop(b):
+    """Какую часть кадра баннера брать: заданную вручную или среднюю полосу в четверть экрана."""
+    if b.get("crop"):
+        return list(b["crop"])
+    try:
+        bi_ = probe(find_banner(b["file"]))
+    except Exception:
+        bi_ = {"w": 1920, "h": 1080}
+    bw = bi_["w"] // 2 * 2
+    bh = min(bi_["h"], int(bw * 480 / W)) // 2 * 2
+    return [0, (bi_["h"] - bh) // 2 // 2 * 2, bw, bh]
+
+
+def banner_filter(b, cfg, quiet=False):
+    """Цепочка ffmpeg для кадра баннера (без ускорения): обрезка, размер, хромакей, размытие."""
+    banner = find_banner(b["file"])
+    bx, by, bw, bh = banner_crop(b)
+    ban_h = int(round(bh * W / bw / 2)) * 2
+    key_ = banner_chroma(banner, b.get("chroma", "auto"))
+    ck = ""
+    if key_:                                     # вырезаем фон баннера и убираем цветную кайму по краям
+        kr, kg, kb = int(key_[2:4], 16), int(key_[4:6], 16), int(key_[6:8], 16)
+        # сравниваем по цвету целиком, а не только по оттенку: иначе тёмно-зелёный фон задевает серые плашки баннера
+        ck = f",colorkey={key_}:{float(cfg.get('banner_chroma_sim', 0.12)):.3f}:0.05"
+        if kg > kr + 60 and kg > kb + 60:
+            ck += ",despill=type=green"
+        elif kb > kr + 60 and kb > kg + 60:
+            ck += ",despill=type=blue"
+        if not quiet:
+            print(f"  баннер: вырезан фон цвета {key_}")
+    bl = f",gblur=sigma={b['blur'] / 5:.2f}" if b.get("blur") else ""
+    return banner, ban_h, f"crop={bw}:{bh}:{bx}:{by},scale={W}:{ban_h}{ck},format=rgba{bl}"
+
+
+def banner_preview(b, cfg, png, t=1.0):
+    """Кадр баннера с текущими настройками поверх тёмного фона: для окна выбора баннера."""
+    banner, ban_h, chain = banner_filter(b, cfg, quiet=True)
+    dur = probe(banner)["dur"]
+    t = max(0.0, min(t, dur - 0.1))
+    r = run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=0x2a2d36:s={W}x{ban_h + 80}",
+             "-ss", f"{t:.2f}", "-i", str(banner), "-filter_complex",
+             f"[1:v]{chain}[b];[0:v][b]overlay=0:40:shortest=1,scale=540:-2", "-frames:v", "1", str(png)])
+    if not Path(png).exists():
+        raise RuntimeError("не получилось показать баннер: " + (r.stderr or "")[-300:])
+    return {"dur": dur, "sec": round(dur / b["speed"], 1)}
+
+
+def find_banner(name):
+    """Файл баннера в папке программы. Прощает лишнее расширение (banner.mov.mp4), приписку « (1)»
+    и регистр букв. Если не нашёл, объясняет, что именно лежит в папке."""
+    name = str(name).strip()
+    p = Path(name) if Path(name).is_absolute() else BASE / name
+    if p.is_file():
+        return p
+    stem = Path(name).stem.split(".")[0].lower()
+    cands = sorted((f for f in BASE.iterdir() if f.is_file() and f.name.lower().startswith(stem)
+                    and f.suffix.lower() in (".mov", ".mp4", ".webm", ".mkv")),
+                   key=lambda f: f.stat().st_mtime, reverse=True)
+    if cands:
+        print(f"  баннер: беру файл {cands[0].name}")
+        return cands[0]
+    near = [f.name for f in BASE.iterdir() if f.is_file() and f.suffix.lower() in (".mov", ".mp4", ".webm", ".mkv")]
+    raise RuntimeError(f"нет файла баннера {Path(name).name} в папке {BASE}. Видео в папке: "
+                       + (", ".join(near) if near else "нет ни одного"))
+
+
+def banner_chroma(banner, setting="auto"):
+    """Цвет хромакея у баннера в виде 0xRRGGBB или None, если вырезать нечего.
+    auto: если у файла нет своей прозрачности, а по краям кадра ровный насыщенный цвет (зелёный, синий и т.п.),
+    этот цвет и вырезается. Можно задать цвет вручную, например "0x00FF00", или выключить: null."""
+    if not setting:
+        return None
+    if setting != "auto":
+        return "0x" + str(setting).lstrip("#").replace("0x", "").upper()[:6]
+    fmt_ = run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=pix_fmt",
+                "-of", "csv=p=0", str(banner)]).stdout.strip().lower()
+    if "a" in fmt_.replace("gray", ""):          # rgba, yuva, argb, bgra: прозрачность уже есть
+        return None
+    CACHE.mkdir(exist_ok=True)
+    png = CACHE / f"chroma_{os.getpid()}_{threading.get_ident()}.png"
+    run(["ffmpeg", "-v", "error", "-y", "-ss", "0.3", "-i", str(banner), "-frames:v", "1", "-vf", "scale=320:-2", str(png)])
+    if not png.exists():
+        return None
+    im = Image.open(png).convert("RGB")
+    png.unlink(missing_ok=True)
+    w, h = im.size
+    px = im.load()
+    edge = [px[x, y] for x in range(w) for y in (0, 1, 2, h - 3, h - 2, h - 1)] + \
+           [px[x, y] for y in range(h) for x in (0, 1, 2, w - 3, w - 2, w - 1)]
+    med = [sorted(c[i] for c in edge)[len(edge) // 2] for i in range(3)]
+    same = sum(1 for c in edge if all(abs(c[i] - med[i]) < 28 for i in range(3))) / len(edge)
+    if same < 0.9 or max(med) - min(med) < 90:   # края пёстрые или цвет не насыщенный: это не хромакей
+        return None
+    return "0x{:02X}{:02X}{:02X}".format(*med)
 
 
 SATIS_DIR = BASE / "satisfying"
@@ -1365,18 +1824,27 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
         words = ai_fix_words(merge_hyphens(transcribe(clip, cfg)), clip, cfg)
         ai = ai_meta(words, streamer, cfg)
         title = fixed_title or (ai["title"] if ai else fix_title(title, words))
-        segs = keep_segments(words, info["dur"], fmt, cfg)
+        segs = keep_segments(words, info["dur"], fmt, cfg, clip)
+        cut = info["dur"] - sum(b - a for a, b in segs)
+        if fmt != "talk" and cut > 0.5:
+            print(f"  вырезано тишины: {cut:.1f} с (громкие моменты игры оставлены)")
         content = sum(b - a for a, b in segs)
-        banner = BASE / cfg[f"banner_{fmt}"]
-        if not banner.exists():
-            sys.exit(f"Нет файла баннера: {banner}")
-        ban_dur = probe(banner)["dur"]
+        bnr = banner_for(cfg, fmt, (force or {}).get("banner"))
+        banner = find_banner(bnr["file"])
+        ban_speed = bnr["speed"]                                       # баннер можно ускорить
+        print(f"  баннер: {Path(banner).name}, ускорение {ban_speed:g}x" + (f", размытие {bnr['blur']:g}" if bnr["blur"] else ""))
+        ban_dur = probe(banner)["dur"] / ban_speed
         split_out = banner_splits(words, segs, content, ban_dur, cfg)     # один баннер или два
         splits_src = [out_to_src(x, segs) for x in split_out]
         total = content + ban_dur * len(split_out)
-    bx, by, bw, bh = cfg[f"banner_{fmt}_crop"]
+    try:
+        _bp = banner_for(cfg, fmt, (force or {}).get("banner"))
+        bx, by, bw, bh = banner_crop(_bp)
+    except Exception:
+        if not preview:
+            raise
+        bw, bh = 1920, 482                       # для примера кадра баннер не нужен, нужна только его высота
     ban_h = int(round(bh * W / bw / 2)) * 2
-    blur = cfg.get(f"banner_{fmt}_blur", 0)
 
     # раскладка окон: список (что вырезать из исходника, куда поставить на экране, радиус углов)
     # разметка стримера (камера, обрезка, зона субтитров) сделана для обычного кадра стрима 16:9.
@@ -1600,6 +2068,8 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
         style = "classic"
     if (force or {}).get("font"):
         cfg = dict(cfg, font=force["font"])
+    if (force or {}).get("sub_anim"):
+        cfg = dict(cfg, sub_anim=force["sub_anim"])
     two = len(wins) == 2 and cam_first is not None and not dyn and not satis and stacked
     if style in GEO_STYLES and not two:
         style = "classic"                        # этим стилям нужны два окна: камера и игра
@@ -1610,10 +2080,12 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
     if two and style in ("split", "sticker", "full", "glass"):
         cam_c, game_c = wins[0][0], wins[1][0]
         top = wins[0][1][1]                      # 150 без заголовка, 250 с заголовком
-        if style == "split":                     # встык на всю ширину, текст на стыке
-            gh = 1870 - (top + 536)
-            wins = [(cam_c, (0, top, 1080, 520), 0), (game_c, (0, top + 536, 1080, gh), 0)]
-            sub_y, ban_cy, bg_mode = top + 528 - 58, top + 536 + gh // 2, "black"
+        if style == "split":                     # встык на всю ширину, на стыке тонкая неоновая линия
+            seam = top + 524
+            gh = 1870 - (seam + 4)
+            wins = [(cam_c, (0, top, 1080, 524), 0), (game_c, (0, seam + 4, 1080, gh), 0)]
+            sub_y, ban_cy, bg_mode = seam - 58, seam + 4 + gh // 2, "black"
+            tags += neon_seam(seam + 2, accent)
         elif style == "full":                    # игра во весь кадр, камера карточкой сверху
             bg_crop, bg_mode = to_ratio(game_c, 1080 / 1920), "full"
             wins = [(cam_c, (150, top - 10, 780, 346), 44)]
@@ -1675,7 +2147,12 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
     def win_chain(i, mask_in, en=""):
         crop, d, r = wins[i]
         pad = f",pad={d[2] + 40}:{d[3] + 40}:20:20:color=white" if i in rot else ""
-        out_ = [f"[s{i}]crop={crop[2]}:{crop[3]}:{crop[0]}:{crop[1]},scale={d[2]}:{d[3]}{pad},format=rgba[w{i}a]",
+        zm = ""
+        if ZOOM.get("expr") and i == ZOOM["win"]:      # плавный зум и тряска окна на громких моментах
+            z, sx, sy = ZOOM["expr"]
+            zm = (f",scale=w='2*trunc({d[2]}*({z})/2)':h='2*trunc({d[3]}*({z})/2)':eval=frame,"
+                  f"crop={d[2]}:{d[3]}:'clip((iw-ow)/2+{sx}\\,0\\,iw-ow)':'clip((ih-oh)/2+{sy}\\,0\\,ih-oh)'")
+        out_ = [f"[s{i}]crop={crop[2]}:{crop[3]}:{crop[0]}:{crop[1]},scale={d[2]}:{d[3]}{zm}{pad},format=rgba[w{i}a]",
                 f"[w{i}a][{mask_in}:v]alphamerge[w{i}b]"]
         if i in rot:                             # наклонённое окно ставим по центру своего места
             ang = f"{-rot[i]}*PI/180"
@@ -1685,30 +2162,69 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
             out_.append(f"[l{i}][w{i}b]overlay={d[0]}:{d[1]}{en}[l{i + 1}]")
         return out_
 
+    ZOOM = {"expr": None, "win": 1 if (style == "sticker" and len(wins) > 1) else 0}
+    want_zoom = (force or {}).get("zoom", cfg.get("zoom", True))
+    if want_zoom and not dyn:
+        try:
+            ev = zoom_events(clip)
+            if preview and preview.get("video"):         # пример в движении: время от его начала
+                t0 = float(preview.get("t", 0))
+                ev = [(t - t0, a, k) for t, a, k in ev if t0 <= t < t0 + float(preview["video"])]
+                ZOOM["expr"] = zoom_expr(ev)
+            elif not preview:                          # готовый ролик: время с учётом вырезанных пауз и баннеров
+                out_ev = []
+                for t, a, k in ev:
+                    if not any(sa <= t <= sb for sa, sb in segs):
+                        continue
+                    o = src_to_out(t, segs)
+                    o += ban_dur * sum(1 for sp in split_out if o >= sp - 1e-6)
+                    out_ev.append((o, a, k))
+                ZOOM["expr"] = zoom_expr(out_ev)
+                if out_ev:
+                    print(f"  зумов на эмоциях: {len(out_ev)}" + (f", с тряской: {sum(1 for x in out_ev if x[2])}"
+                                                                  if any(x[2] for x in out_ev) else ""))
+        except Exception as e:
+            print(f"  зумы пропущены: {e}")
     sub_auto = sub_y                                 # где субтитры встали бы сами
     if force and force.get("sub_y"):                 # положение субтитров задал человек
         sub_y = int(force["sub_y"])
-    ass = CACHE / f"subs_{os.getpid()}.ass"          # свои временные файлы у каждого запущенного окна
+    ass = CACHE / f"subs_{os.getpid()}_{threading.get_ident()}.ass"   # у примера и монтажа свои файлы
     if preview:
-        # один кадр с этой раскладкой: окна, пример субтитров и место, куда встанет баннер
-        sample = [{"s": 0.0, "e": 1.0, "t": "субтитры"}]
-        write_ass(ass, title, sample, [(0.0, 1.0)], [], 0.0, 1.0, sub_y, cfg, title_y, title_size, accent,
+        # один кадр с этой раскладкой: окна, пример субтитров и место, куда встанет баннер.
+        # preview["video"] = секунды: вместо кадра короткий ролик со звуком, чтобы посмотреть пример в движении
+        vdur = float(preview.get("video") or 0)
+        sd = vdur or 1.0
+        sample = [{"s": 0.0, "e": sd, "t": "субтитры"}]
+        if cfg.get("sub_anim") == "karaoke":      # подсветка видна только на фразе из нескольких слов
+            step = sd / 3
+            sample = [{"s": i * step, "e": (i + 1) * step - 0.02, "t": t} for i, t in enumerate(("вот", "это", "момент"))]
+        cached = clip.with_suffix(".words.json")
+        if vdur and cached.exists():             # клип уже распознавали: в примере настоящие субтитры
+            try:
+                t0 = float(preview.get("t", 0))
+                real = [dict(w, s=w["s"] - t0, e=w["e"] - t0) for w in json.loads(cached.read_text(encoding="utf-8"))
+                        if t0 <= w["s"] < t0 + vdur]
+                sample = real or sample
+            except Exception:
+                pass
+        write_ass(ass, title, sample, [(0.0, sd)], [], 0.0, sd, sub_y, cfg, title_y, title_size, accent,
                   show_title and bool(title), sub_style, tags)
         n_w = len(wins)
-        pf = [f"[0:v]split={n_w + 1}[b]" + "".join(f"[s{i}]" for i in range(n_w)), bg_chain(),
-              "[bg][1:v]overlay=0:0[l0]"]
+        pf = [f"[0:v]{'fps=30,' if vdur else ''}split={n_w + 1}[b]" + "".join(f"[s{i}]" for i in range(n_w)), bg_chain(),
+              "[bg][1:v]overlay=0:0:shortest=1[l0]" if vdur else "[bg][1:v]overlay=0:0[l0]"]
         for i in range(n_w):
             pf += win_chain(i, 2 + i)
         last = f"l{n_w}"
-        pcmd = ["ffmpeg", "-v", "error", "-y", "-ss", f"{float(preview.get('t', 0)):.2f}", "-i", str(clip),
-                "-i", str(frame)]
+        loop = ["-loop", "1"] if vdur else []
+        pcmd = ["ffmpeg", "-v", "error", "-y", "-ss", f"{float(preview.get('t', 0)):.2f}"] + \
+               (["-t", f"{vdur:.2f}"] if vdur else []) + ["-i", str(clip)] + loop + ["-i", str(frame)]
         for mpath in masks:
-            pcmd += ["-i", str(mpath)]
+            pcmd += loop + ["-i", str(mpath)]
         if satis:
             smask = CACHE / f"mask_{SAT[2]}x{SAT[3]}_44.png"
             if not smask.exists():
                 rounded_mask(SAT[2], SAT[3], 44, smask)
-            pcmd += ["-ss", "3", "-i", str(satis), "-i", str(smask)]
+            pcmd += ["-ss", "3", "-i", str(satis)] + loop + ["-i", str(smask)]
             ns = 2 + n_w
             pf.append(f"[{ns}:v]scale={SAT[2]}:{SAT[3]}:force_original_aspect_ratio=increase,"
                       f"crop={SAT[2]}:{SAT[3]},setsar=1,format=rgba[sat0]")
@@ -1719,8 +2235,18 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
         if progress_y:                           # полоска времени: в примере показана на 40%
             pf.append(f"[{last}]drawbox=x=0:y={progress_y}:w=432:h=12:color=0x{accent[0]:02X}{accent[1]:02X}{accent[2]:02X}:t=fill[lpb]")
             last = "lpb"
-        pf.append(f"[{last}]drawbox=x=0:y={by0}:w={W}:h={ban_h}:color=white@0.55:t=6,"
-                  f"ass={ass.name},scale=540:960[vout]")
+        box = "" if vdur else f"drawbox=x=0:y={by0}:w={W}:h={ban_h}:color=white@0.55:t=6,"
+        pf.append(f"[{last}]{box}ass={ass.name}:fontsdir=../fonts,scale=540:960[vout]")
+        if vdur:
+            outp = str(Path(preview["video_out"]).resolve())
+            r = run(pcmd + ["-filter_complex", ";".join(pf), "-map", "[vout]", "-map", "0:a?", "-t", f"{vdur:.2f}",
+                            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26", "-pix_fmt", "yuv420p", "-r", "30",
+                            "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", outp], cwd=str(CACHE))
+            ass.unlink(missing_ok=True)
+            if r.returncode != 0:
+                print(r.stderr[-600:])
+                return None
+            return {"video": outp, "sub_y": sub_y, "sub_auto": sub_auto, "style": style}
         r = run(pcmd + ["-filter_complex", ";".join(pf), "-map", "[vout]", "-frames:v", "1",
                         str(Path(preview["png"]).resolve())], cwd=str(CACHE))
         ass.unlink(missing_ok=True)
@@ -1779,7 +2305,9 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
         else:
             vchain += f"[g{gi}v]"
     fc.append(f"{vchain}concat=n={len(groups)}:v=1:a=0[cv]")
-    fc.append(f"[{nb}:a]aresample=48000,aformat=channel_layouts=stereo,volume={gain:.1f}dB,"
+    sp_a = f"atempo={ban_speed:.3f}," if abs(ban_speed - 1) > 0.01 else ""
+    sp_v = f"setpts=PTS/{ban_speed:.3f}," if abs(ban_speed - 1) > 0.01 else ""
+    fc.append(f"[{nb}:a]{sp_a}aresample=48000,aformat=channel_layouts=stereo,volume={gain:.1f}dB,"
               f"alimiter=limit=0.89,apad=whole_dur={ban_dur:.4f},atrim=0:{ban_dur:.4f}"
               + (f",asplit={nban}" + "".join(f"[ba{k}]" for k in range(nban)) if nban > 1 else "[ba0]"))
     achain = "".join(f"[g{gi}a]" + (f"[ba{gi}]" if gi < nban else "") for gi in range(len(groups)))
@@ -1822,9 +2350,9 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
         fc.append(f"color=c=0x{accent[0]:02X}{accent[1]:02X}{accent[2]:02X}:s={W}x12:r={fps}[pbar]")
         fc.append(f"[{last}][pbar]overlay=x='-w+w*t/{total:.3f}':y={progress_y}:shortest=1[lpb]")
         last = "lpb"
-    bl = f",gblur=sigma={blur / 5:.2f}" if blur else ""
     ban_y = ban_cy - ban_h // 2
-    fc.append(f"[{nb}:v]crop={bw}:{bh}:{bx}:{by},scale={W}:{ban_h},format=rgba{bl},fps={fps}"
+    _, _, ban_chain = banner_filter(bnr, cfg)
+    fc.append(f"[{nb}:v]{ban_chain},{sp_v}fps={fps}"
               + (f",split={nban}" + "".join(f"[bs{k}]" for k in range(nban)) if nban > 1 else "[bs0]"))
     for k, b0 in enumerate(ban_at):
         # до своего момента баннер идёт прозрачными кадрами: так основное видео не зависит от того,
@@ -1834,9 +2362,9 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
                   f"eof_action=pass[wb{k}]")
         last = f"wb{k}"
     fc.append(f"[{last}]null[wb]")
-    fc.append(f"[wb]ass={ass.name},format=yuv420p[vout]")
+    fc.append(f"[wb]ass={ass.name}:fontsdir=../fonts,format=yuv420p[vout]")
 
-    tmp = CACHE / f"render_{os.getpid()}.mp4"
+    tmp = CACHE / f"render_{os.getpid()}_{threading.get_ident()}.mp4"
     cmd = ["ffmpeg", "-v", "error", "-y"] + inputs + ["-i", str(banner),
            "-loop", "1", "-framerate", str(fps), "-i", str(frame)]
     for mpath in masks:
@@ -1859,7 +2387,8 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
     r = run(cmd, cwd=str(CACHE))
     if r.returncode != 0:
         if enc == "h264_amf":
-            print("  кодировщик видеокарты не сработал, пробую обычный")
+            why = [x for x in (r.stderr or "").strip().splitlines() if x.strip()][-1:] if r is not None else []
+            print("  кодировщик видеокарты не сработал, пробую обычный" + (f" ({why[0][:150]})" if why else ""))
             return montage(clip, fmt, streamer, title, out, cfg, "libx264", fixed_title, satis, show_title, force)
         print(r.stderr[-1500:])
         return None
@@ -1919,7 +2448,7 @@ def refix(json_path, force, remember, cfg, enc, send=True):
         print("  не получилось пересобрать")
         return None
     p.update(res)
-    hashtags = (f"#{streamer} " if streamer else "") + "#стример #twitch #нарезки"
+    hashtags = (f"#{streamer} " if streamer else "") + base_tags()
     if "potential" not in p:
         p["potential"] = 50
     p["tg_sent"] = tg_send(out, p, hashtags, "manual" if manual else "clips") if send else False
@@ -1958,7 +2487,7 @@ def process_file(clip, fmt, streamer, title, send, cfg, enc, satis=False):
     lay = detect_layout(clip, streamer)
     p["potential"] = potential(p, res, lay.get("share"))
     p["game_on_screen"] = bool(lay.get("game")) and fmt == "talk"
-    hashtags = (f"#{streamer} " if streamer else "") + "#стример #twitch #нарезки"
+    hashtags = (f"#{streamer} " if streamer else "") + base_tags()
     out.with_suffix(".txt").write_text((res["description"] or res["final_title"]) + f"\n\n{hashtags}\n", encoding="utf-8")
     p["tg_sent"] = tg_send(out, p, hashtags, "manual") if send else False
     out.with_suffix(".json").write_text(json.dumps(p, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -2088,7 +2617,7 @@ def main():
             if p.get("tg_sent") or not video.exists():
                 continue
             kind = "manual" if p.get("source") == "manual" or p.get("format") == "top" else "clips"
-            if tg_send(video, p, f"#{p['streamer']} #стример #twitch #нарезки", kind):
+            if tg_send(video, p, f"#{p['streamer']} " + base_tags(), kind):
                 p["tg_sent"] = True
                 j.write_text(json.dumps(p, ensure_ascii=False, indent=2), encoding="utf-8")
                 sent += 1
@@ -2131,7 +2660,7 @@ def main():
         p["game_on_screen"] = bool(lay.get("game")) and p["format"] == "talk"
         p["on_screen"] = lay.get("what", "")
         p["potential"] = potential(p, res, share)
-        hashtags = f"#{p['streamer']} #стример #twitch #нарезки"
+        hashtags = f"#{p['streamer']} " + base_tags()
         l1, l2 = split_title(res["final_title"])
         out.with_suffix(".txt").write_text(
             (res["description"] or f"{l1} {l2}".strip().capitalize()) + f"\n\n{hashtags}\n",

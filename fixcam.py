@@ -9,11 +9,13 @@ import queue
 import subprocess
 import sys
 import threading
+import os
 from pathlib import Path
 
 import montage as m
 
-BASE = Path(__file__).resolve().parent
+BASE = Path(os.environ.get("CLIPPER_DATA") or Path(__file__).resolve().parent).resolve()   # папка профиля с данными
+CODE = Path(__file__).resolve().parent                     # папка с программой
 READY = BASE / "clips" / "ready"
 VIEW_W = 960                                     # ширина кадра в окне
 
