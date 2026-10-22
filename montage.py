@@ -1735,7 +1735,7 @@ def banner_for(cfg, fmt, name=None):
     if not b.get("file"):
         raise RuntimeError("не выбран баннер оффера: добавь его кнопкой «Баннеры офферов…»")
     b["speed"] = min(2.0, max(0.5, float(b.get("speed") or 1.0)))
-    b["blur"] = max(0, min(40, float(b.get("blur") or 0)))
+    b["fade"] = max(0, min(90, float(b.get("fade") or 0)))   # прозрачность баннера в процентах (0 = плотный)
     b.setdefault("chroma", "auto")
     return b
 
@@ -1773,7 +1773,7 @@ def banner_size(b):
 
 
 def banner_filter(b, cfg, quiet=False):
-    """Цепочка ffmpeg для кадра баннера (без ускорения): обрезка, размер, хромакей, размытие.
+    """Цепочка ffmpeg для кадра баннера (без ускорения): обрезка, размер, хромакей, прозрачность.
     Возвращает файл, (ширину, высоту) баннера в ролике и цепочку."""
     banner = find_banner(b["file"])
     bx, by, bw, bh = banner_crop(b)
@@ -1792,7 +1792,7 @@ def banner_filter(b, cfg, quiet=False):
             ck += ",despill=type=blue"
         if not quiet:
             print(f"  баннер: вырезан фон цвета {key_}")
-    bl = f",gblur=sigma={b['blur'] / 5:.2f}" if b.get("blur") else ""
+    bl = f",colorchannelmixer=aa={1 - b['fade'] / 100:.3f}" if b.get("fade") else ""
     return banner, (ow, oh), f"crop={bw}:{bh}:{bx}:{by},scale={ow}:{oh}:flags=lanczos{ck},format=rgba{bl}"
 
 
@@ -1955,7 +1955,7 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
         bnr = banner_for(cfg, fmt, (force or {}).get("banner"))
         banner = find_banner(bnr["file"])
         ban_speed = bnr["speed"]                                       # баннер можно ускорить
-        print(f"  баннер: {Path(banner).name}, ускорение {ban_speed:g}x" + (f", размытие {bnr['blur']:g}" if bnr["blur"] else ""))
+        print(f"  баннер: {Path(banner).name}, ускорение {ban_speed:g}x" + (f", прозрачность {bnr['fade']:g}%" if bnr.get("fade") else ""))
         ban_dur = probe(banner)["dur"] / ban_speed
         split_out = banner_splits(words, segs, content, ban_dur, cfg)     # один баннер или два
         splits_src = [out_to_src(x, segs) for x in split_out]

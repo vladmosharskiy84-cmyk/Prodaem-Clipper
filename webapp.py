@@ -198,7 +198,7 @@ def _style_key(label):
 def banners_short():
     out = []
     for name, b in m.banner_list(A.cfg).items():
-        out.append({"name": name, "speed": float(b.get("speed") or 1), "blur": float(b.get("blur") or 0)})
+        out.append({"name": name, "speed": float(b.get("speed") or 1), "fade": float(b.get("fade") or 0)})
     return out
 
 

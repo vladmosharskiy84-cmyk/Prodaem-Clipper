@@ -1,16 +1,16 @@
 {
-  "version": "2026.10.22 18:44",
-  "time": 1792694688.461856,
-  "notes": "Баннер: хромакей Авто/Зелёный/Синий с силой, баннер в своём размере без обрезки",
+  "version": "2026.10.22 19:03",
+  "time": 1792695789.1005464,
+  "notes": "Баннер: прозрачность вместо размытия, хромакей Авто/Зелёный/Синий, баннер в своём размере",
   "files": {
-    "montage.py": "7cba15d10140f982c8ba79095ee70a9b7593c2a823c446c9d89b1da49127900d",
+    "montage.py": "fe5caaf26fb3b4c16b3f1f7dedc5543883310d3107bcd7d1afb806bef0d0d3aa",
     "review.py": "9db393a6640240108bfb7c3c1a3ac46e0085e17f34a16918785de982daf653c6",
     "top5.py": "82d6960486bf7e741acbd75e319e8a03a62862cac23fcaf6eee40ee5cb02e7db",
     "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
     "clipfinder.py": "1ad5f5af546ab59c59f9e8ef44a4a821c39252d537848b041dc277cde654151b",
     "updater.py": "71e9f696cfa1e5c31899b40aaf34478ea4f3d29027ba5dd4c48ad2f90e8f4412",
-    "webapp.py": "838cd4321d7f2bd745a1b6a5dbc7085fe5c4c879af10cd4989e266f9d13f9626",
-    "ui.html": "158f629d3c053160e2b6aaaf2265710a15aa44c8e9e68a5a7fe887722355289d",
+    "webapp.py": "d96a155b827baedb98563a81d291651e4f8d3bfcc84a6620170b306e1b417af9",
+    "ui.html": "0fdf62138e5752a0063cc473e33bb846fdc2f154b6dde694fce3a30df2466f87",
     "logo_src.png": "e43b51bb73da86652be2c2adac971e5b39557d895d84a4c2449e9b99f95c1739",
     "highlights.py": "b425d8a6e1d540a5d912348eea60d3a75120af0d6e8312003fa3f8bda1d7ef7d"
   }
