@@ -409,12 +409,13 @@ def worker():
             err = str(e) or e.__class__.__name__
             A.log(f"  ошибка: {err}")
         ok = bool(out)
+        dropped = not ok and (job.get("agents") or {}).get("decision") == "reject"   # судья: неактуально
         with A.lock:
-            A.st["clips"][job["clip"]["clip_id"]] = "done" if ok else "retry"
+            A.st["clips"][job["clip"]["clip_id"]] = "done" if ok else ("skipped" if dropped else "retry")
             rv.save_state(A.st)
             if ok:
                 A.done += 1
-            else:
+            elif not dropped:
                 A.failed += 1
             if j:
                 sent = False
@@ -424,15 +425,20 @@ def worker():
                     pass
                 stage = ("готово" + (" · отправлено в Telegram" if sent else "")) if ok else (err or "не получилось")[:140]
                 ag = job.get("agents")
-                if ok and ag:                    # что решили критик, судья и продюсер
+                if ag and (ok or dropped):       # что решили критик, судья и продюсер
                     pl = ag.get("plan") or {}
-                    stage = (f"✓ {ag.get('score', '?')}/10 → @{pl['account']} {pl.get('when', '')}" if pl
+                    stage = (f"✓ {ag.get('score', '?')}/10 → @{pl['account']} {pl.get('when', '')}"
+                             if ag.get("decision") == "publish" and pl.get("account")
+                             else f"◌ в запасе: {ag.get('reason', '')}" if ag.get("decision") == "reserve"
                              else f"✕ в брак: {ag.get('reason', '')}")[:140]
-                j.update(state="done" if ok else "error", end=time.time(), out=str(out) if out else None, stage=stage)
+                j.update(state="done" if (ok or dropped) else "error", end=time.time(), out=str(out) if out else None,
+                         stage=stage)
         A.busy = None
         lock.close()
         name = job.get("streamer") or job["clip"].get("streamer") or "клип"
-        if ok:
+        if dropped:
+            A.toast(f"{name}: судья не пропустил — {(job.get('agents') or {}).get('reason', '')}"[:120], ok=False)
+        elif ok:
             A.toast(f"{name}: ролик готов" + (" и отправлен в Telegram" if j and "Telegram" in j["stage"] else ""))
         else:
             A.toast(f"{name}: не смонтировался, клип вернётся в очередь при перезапуске", ok=False)

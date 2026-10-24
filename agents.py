@@ -83,7 +83,8 @@ def settings():
     roles = dict(DEFAULT_ROLES)
     roles.update(s.get("roles") or {})
     return {"accounts": accs, "roles": {a: roles.get(a, "дота-клипы") for a in accs},
-            "min_views": s.get("min_views", 3000), "rules": s.get("rules") or []}
+            "min_views": s.get("min_views", 3000), "rules": s.get("rules") or [],
+            "min_score": float(s.get("min_score", 7)), "fresh_hours": float(s.get("fresh_hours", 48))}
 
 
 def frames(video, dur, n=6):
@@ -218,24 +219,20 @@ def judge(report, rnd, cfg, prev=""):
 
 
 # ---------- продюсер ----------
-PRODUCER = """Ты продюсер четырёх TikTok-аккаунтов с клипами по Dota 2 (аудитория СНГ, время Киева).
+PRODUCER = """Ты продюсер четырёх TikTok-аккаунтов с клипами по Dota 2 (аудитория СНГ).
 Роли аккаунтов:
 {roles}
-
-Уже запланировано на ближайшие дни (аккаунт: слоты):
-{busy}
-
-Свободные слоты: каждый день 14:00, 18:00, 21:00 на каждом аккаунте. Сегодня {today}, сейчас {now}.
 {stats}
 Новый ролик: стример {streamer}; момент: {moment}; тип: {kind}; оценка критика {score}/10.
 Речь из ролика: {text}
 
-Выбери ОДИН аккаунт, который лучше всего подходит по роли, и ближайший свободный слот на нём (не раньше чем через
-30 минут). Напиши описание для TikTok: 1 короткая фраза на русском, которая цепляет, плюс вопрос зрителям,
-чтобы писали комментарии. Без кликбейта-лжи. Хэштеги: 3-5 штук по теме (стример, dota2 и т.п.).
+Расставь аккаунты, которым ролик подходит по роли, от лучшего к худшему (не больше трёх; если подходит только
+один, дай один). Напиши описание для TikTok: 1 короткая цепляющая фраза на русском плюс вопрос зрителям, чтобы
+писали комментарии. Без кликбейта-лжи. Хэштеги: 3-5 штук по теме (стример, dota2 и т.п.).
 
-Ответ ТОЛЬКО JSON: {{"account": "ник без @", "day": "ГГГГ-ММ-ДД", "time": "ЧЧ:ММ", "caption": "...",
-"hashtags": "#... #...", "why": "почему этот аккаунт, коротко"}}"""
+Ответ ТОЛЬКО JSON: {{"accounts": ["ник без @", ...], "caption": "...", "hashtags": "#... #...", "why": "коротко"}}"""
+
+PER_DAY = 3
 
 
 def _load_schedule():
@@ -243,78 +240,106 @@ def _load_schedule():
         sc = json.loads(SCHEDULE.read_text(encoding="utf-8"))
     except Exception:
         sc = []
-    cut = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+    cut = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
     return [x for x in sc if x.get("day", "") >= cut]
 
 
-def _free_slot(sc, acc):
-    """Ближайший свободный слот на аккаунте."""
-    now = datetime.now() + timedelta(minutes=30)
-    taken = {(x["account"], x["day"], x["time"]) for x in sc}
-    for dd in range(0, 7):
-        day = (now + timedelta(days=dd)).strftime("%Y-%m-%d")
-        for t in SLOTS:
-            when = datetime.strptime(f"{day} {t}", "%Y-%m-%d %H:%M")
-            if when >= now and (acc, day, t) not in taken:
-                return day, t
-    return (now + timedelta(days=7)).strftime("%Y-%m-%d"), SLOTS[0]
+def _save_schedule(sc):
+    DIR.mkdir(parents=True, exist_ok=True)
+    SCHEDULE.write_text(json.dumps(sc, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def _target_day():
+    """День, на который расписываем: сегодня, а если все слоты сегодня уже прошли, завтра."""
+    now = datetime.now()
+    last = datetime.strptime(now.strftime("%Y-%m-%d") + " " + SLOTS[-1], "%Y-%m-%d %H:%M")
+    return (now if now + timedelta(minutes=20) <= last else now + timedelta(days=1)).strftime("%Y-%m-%d")
+
+
+def _future(day, t):
+    return datetime.strptime(f"{day} {t}", "%Y-%m-%d %H:%M") >= datetime.now() + timedelta(minutes=20)
 
 
 def producer(p, report, words, cfg, log=print):
+    """Только 3 лучших ролика в день на аккаунт. Свободный слот — ставим. Нет слота — новый ролик вытесняет
+    самый слабый из ещё не вышедших, если он сильнее. Иначе ролик в запас: в Telegram он не уходит."""
     st = settings()
+    accs = st["accounts"]
     sc = _load_schedule()
-    busy = {}
-    for x in sc:
-        busy.setdefault(x["account"], []).append(f"{x['day']} {x['time']}")
     stats = ""
     try:
         rep = json.loads((DIR / "report.json").read_text(encoding="utf-8"))
-        accs = rep.get("accounts") or {}
-        stats = "Аналитика аккаунтов (медиана просмотров, % застрявших на пробе): " + ", ".join(
-            f"@{a}: {v.get('median')} / {v.get('stuck')}%" for a, v in accs.items()) + "\n"
-        if rep.get("by_hour"):
-            stats += "Медиана по времени выхода: " + ", ".join(f"{b['label']}: {b['median']}" for b in rep["by_hour"]) + "\n"
+        a_ = rep.get("accounts") or {}
+        stats = "Аналитика (медиана просмотров, % застрявших на пробе): " + ", ".join(
+            f"@{a}: {v.get('median')} / {v.get('stuck')}%" for a, v in a_.items()) + "\n"
     except Exception:
         pass
-    now = datetime.now()
+    score = float((report or {}).get("score") or 0)
     res = _claude(PRODUCER.format(
-        roles="\n".join(f"- @{a}: {r}" for a, r in st["roles"].items()),
-        busy="\n".join(f"- @{a}: {', '.join(v[-9:])}" for a, v in busy.items()) or "- пока ничего",
-        today=now.strftime("%Y-%m-%d"), now=now.strftime("%H:%M"), stats=stats,
+        roles="\n".join(f"- @{a}: {r}" for a, r in st["roles"].items()), stats=stats,
         streamer=p.get("streamer", ""), moment=(report or {}).get("moment") or p.get("final_title", ""),
-        kind=(report or {}).get("kind", ""), score=(report or {}).get("score", "?"),
-        text=" ".join(w["t"] for w in words)[:1500]), cfg, 400)
-    accs = st["accounts"]
-    if not res or str(res.get("account", "")).lstrip("@").lower() not in accs:
-        acc = min(accs, key=lambda a: len(busy.get(a, [])))        # без ответа: самый свободный аккаунт
-        res = {"account": acc, "caption": p.get("final_title", ""), "hashtags": f"#{p.get('streamer', '')} #dota2",
-               "why": "самый свободный аккаунт"}
-    acc = str(res["account"]).lstrip("@").lower()
-    day, t = str(res.get("day", "")), str(res.get("time", ""))
-    taken = {(x["account"], x["day"], x["time"]) for x in sc}
-    try:
-        ok = datetime.strptime(f"{day} {t}", "%Y-%m-%d %H:%M") >= now and (acc, day, t) not in taken
-    except Exception:
-        ok = False
-    if not ok:
-        day, t = _free_slot(sc, acc)
-    plan = {"account": acc, "day": day, "time": t, "caption": str(res.get("caption", "")).strip(),
-            "hashtags": str(res.get("hashtags", "")).strip(), "why": str(res.get("why", "")).strip(),
-            "clip": p.get("clip_id", ""), "file": p.get("file_out", "")}
+        kind=(report or {}).get("kind", ""), score=score,
+        text=" ".join(w["t"] for w in words)[:1500]), cfg, 400) or {}
+    ranked = [str(a).lstrip("@").lower() for a in (res.get("accounts") or [res.get("account", "")])]
+    ranked = [a for a in dict.fromkeys(ranked) if a in accs] or list(accs)
+    day = _target_day()
+    base = {"caption": str(res.get("caption") or p.get("final_title", "")).strip(),
+            "hashtags": str(res.get("hashtags") or f"#{p.get('streamer', '')} #dota2").strip(),
+            "why": str(res.get("why", "")).strip(), "clip": p.get("clip_id", ""), "file": p.get("file_out", ""),
+            "score": score, "streamer": p.get("streamer", "")}
+    plan, bumped = None, None
+    for acc in ranked:                                       # свободный слот на подходящем аккаунте
+        taken = {x["time"] for x in sc if x["account"] == acc and x["day"] == day}
+        free = [t for t in SLOTS if t not in taken and _future(day, t)]
+        if free:
+            plan = dict(base, account=acc, day=day, time=free[0])
+            break
+    if not plan:                                             # слотов нет: вытесняем самый слабый ещё не вышедший
+        cands = [x for x in sc if x["account"] in ranked and x["day"] == day and _future(day, x["time"])]
+        if cands:
+            weak = min(cands, key=lambda x: float(x.get("score") or 0))
+            if score > float(weak.get("score") or 0):
+                sc.remove(weak)
+                bumped = weak
+                plan = dict(base, account=weak["account"], day=day, time=weak["time"])
+    if not plan:
+        log(f"  продюсер: в запас — на сегодня у подходящих аккаунтов уже по {PER_DAY} ролика сильнее")
+        return {"reserve": True, "why": f"на {day[5:]} у подходящих аккаунтов уже по {PER_DAY} ролика сильнее"}
     sc.append(plan)
-    DIR.mkdir(parents=True, exist_ok=True)
-    SCHEDULE.write_text(json.dumps(sc, ensure_ascii=False, indent=1), encoding="utf-8")
-    when = "сегодня" if day == now.strftime("%Y-%m-%d") else \
-        "завтра" if day == (now + timedelta(days=1)).strftime("%Y-%m-%d") else day[5:]
-    plan["when"] = f"{when} {t}"
-    log(f"  продюсер: @{acc}, {plan['when']}. {plan['why']}")
+    _save_schedule(sc)
+    now = datetime.now()
+    plan["when"] = ("сегодня " if day == now.strftime("%Y-%m-%d") else "завтра ") + plan["time"]
+    if bumped:
+        plan["bumped"] = bumped
+        log(f"  продюсер: вытеснил более слабый ролик ({bumped.get('streamer', '')}, {bumped.get('score')}/10) "
+            f"со слота @{plan['account']} {plan['time']}")
+    log(f"  продюсер: @{plan['account']}, {plan['when']}. {plan['why']}")
     return plan
 
 
 # ---------- весь круг ----------
-def review(make, clip, words, cfg, log=print):
+def stale(p, hours):
+    """Клип с Twitch старше hours часов: уже неактуален. Нарезка стрима и свои файлы не проверяются."""
+    if p.get("own") or p.get("source") == "vod" or not p.get("created_at"):
+        return None
+    try:
+        made = datetime.strptime(str(p["created_at"])[:19], "%Y-%m-%dT%H:%M:%S")
+    except Exception:
+        return None
+    from datetime import timezone
+    age = (datetime.now(timezone.utc).replace(tzinfo=None) - made).total_seconds() / 3600
+    return age if age > hours else None
+
+
+def review(make, clip, words, cfg, log=print, p=None):
     """make(force_extra) монтирует ролик и возвращает (путь, результат монтажа).
     Возвращает (путь, результат, отчёт агентов) после критика, судьи и, если надо, переделки."""
+    st = settings()
+    age = stale(p or {}, st["fresh_hours"])
+    if age is not None and _key():
+        log(f"  судья: в брак — клипу {age / 24:.1f} дн., это уже неактуально")
+        return None, None, {"rounds": [], "decision": "reject", "score": 0, "issues": [],
+                            "reason": f"клипу {age / 24:.1f} дн.: неактуально, выкладываем только свежее"}
     out, res = make({})
     if not out or not _key():
         return out, res, None
@@ -350,7 +375,12 @@ def review(make, clip, words, cfg, log=print):
     decision = last["judge"]["decision"]
     if decision == "fix":
         decision = "publish"
+    reason = last["judge"].get("reason", "")
+    sc_ = float(last["critic"].get("score") or 0)
+    if decision == "publish" and sc_ < st["min_score"]:   # строго: проходят только сильные
+        decision, reason = "reject", f"оценка {sc_:g}/10 ниже порога {st['min_score']:g}"
+        log(f"  судья: в брак — {reason}")
     return out, res, {"rounds": rounds, "decision": decision, "score": last["critic"].get("score"),
-                      "reason": last["judge"].get("reason", ""), "moment": last["critic"].get("moment", ""),
+                      "reason": reason, "moment": last["critic"].get("moment", ""),
                       "kind": last["critic"].get("kind", ""), "issues": last["critic"].get("issues", []),
                       "fix": fix or None}

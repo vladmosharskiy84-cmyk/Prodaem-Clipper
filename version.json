@@ -1,20 +1,20 @@
 {
-  "version": "2026.10.24 06:47",
-  "time": 1792824425.6254194,
-  "notes": "Карточки без камеры, баннер без лишних краёв, автоочистка диска, учиться у лидеров, агенты",
+  "version": "2026.10.24 07:02",
+  "time": 1792825325.8786268,
+  "notes": "Строгий отбор: 3 лучших свежих ролика в день на аккаунт, слабые и старые не проходят. Карточки без камеры, баннер без краёв, автоочистка",
   "files": {
-    "montage.py": "741add23bb61587efc179eca4eed0a88b7aa7fc0a07934fa8c7fbed949eb083e",
-    "review.py": "672751a80576c49c07a3c26be1eb9ffa1a68df8707586e16e9d69abafe4cc50f",
+    "montage.py": "368ec62feec41c0eeee8825b134b0b2694b0c7e646b3bf41f816e6001fed2197",
+    "review.py": "e965db558cd4c0c9adfc879f736a477732fab7dba8f859b9843a306fafffc327",
     "top5.py": "82d6960486bf7e741acbd75e319e8a03a62862cac23fcaf6eee40ee5cb02e7db",
     "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
     "clipfinder.py": "1ad5f5af546ab59c59f9e8ef44a4a821c39252d537848b041dc277cde654151b",
     "updater.py": "ecbebd32788961a5ac26368e1bb412af1da2aa3f1d0f92ecb85b2b3721cb862a",
-    "webapp.py": "55c1cef2d8d228f09d7ddd6135de125d272edf549de9306a29c062d334efcd44",
+    "webapp.py": "d7d9a7e581d39d8ec91366f6e64e5e5a2fa06e647ea685b7510c2f3454e6f3e8",
     "ui.html": "d5f7f43fff671dbf0eb2234e6b07de86ab935040f3debc1a50692a2b50206f15",
     "logo_src.png": "e43b51bb73da86652be2c2adac971e5b39557d895d84a4c2449e9b99f95c1739",
     "highlights.py": "111cfd98254055d0d97525de8375fc49ed4a94ee3e13990cf4eb57c862e3012e",
     "accounts.py": "43fd79e15e74b0f2d7fd7fb008df356823505780ade87b5d60fbef94865b0bc4",
-    "agents.py": "f63eddefad3f1f3825b737bcd85ed0571ee915e2af618e22992025053e992413",
+    "agents.py": "a68499a7d5a58bafd04953f88ff11a1511fa9c4c2dc8ec7f9aa3c7c0c4630499",
     "leaders.py": "1edf5e223fbc2655afc2aa47c7828cafdc3bb515867e8a6c8a1de21fb432d3b9"
   }
 }

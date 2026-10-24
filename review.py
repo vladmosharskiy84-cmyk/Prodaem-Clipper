@@ -68,6 +68,11 @@ def load_queue(st):
         if own["clip_id"] not in st["clips"] and Path(own["file"]).exists():
             items.append(own)
     found = []
+    try:                                          # в очереди только свежие клипы: устаревшие не показываем
+        fresh_h = float(json.loads((BASE / "analytics" / "settings.json").read_text(encoding="utf-8")).get("fresh_hours", 48))
+    except Exception:
+        fresh_h = 48.0
+    now_utc = time.time()
     if PASSPORTS.exists():
         seen = set()
         for line in PASSPORTS.read_text(encoding="utf-8").splitlines():
@@ -80,6 +85,14 @@ def load_queue(st):
             raw = BASE / p["file"]
             if not raw.exists():
                 continue
+            if p.get("created_at") and p.get("source") != "vod":
+                try:
+                    import calendar
+                    made = calendar.timegm(time.strptime(str(p["created_at"])[:19], "%Y-%m-%dT%H:%M:%S"))
+                    if now_utc - made > fresh_h * 3600:
+                        continue
+                except Exception:
+                    pass
             old = BASE / "clips" / "ready" / p["format"] / f"{p['streamer']}_{p['clip_id'][:16]}.mp4"
             if old.exists():                      # уже смонтирован автоматическим режимом
                 continue
@@ -709,10 +722,15 @@ def run_job(job, cfg, enc, log=print):
         try:
             import agents
             words = m.transcribe(clip, cfg)
-            got, res, ag = agents.review(make, clip, words, cfg, log)
+            got, res, ag = agents.review(make, clip, words, cfg, log, p)
+            if ag and ag["decision"] == "reject" and not res:          # неактуальный клип: даже не монтируем
+                job["agents"] = {"score": 0, "decision": "reject", "reason": ag.get("reason", ""), "plan": None}
+                return None
             if ag and ag["decision"] == "publish":
                 p["final_title"] = (res or {}).get("final_title", "")
                 ag["plan"] = agents.producer(dict(p, streamer=streamer, file_out=str(out)), ag, words, cfg, log)
+                if ag["plan"].get("reserve"):
+                    ag["decision"], ag["reason"] = "reserve", ag["plan"]["why"]
         except ImportError:
             got, res = make({})
         except Exception as e:
@@ -737,7 +755,16 @@ def run_job(job, cfg, enc, log=print):
             hashtags = pl["hashtags"] or hashtags
             text = pl["caption"] or text
     out.with_suffix(".txt").write_text(text + f"\n\n{hashtags}\n", encoding="utf-8")
-    p["tg_sent"] = m.tg_send(out, p, hashtags, kind)
+    if ag and ag["decision"] != "publish":       # брак и запас в Telegram не уходят: только 3 лучших на аккаунт
+        p["tg_sent"] = False
+        log(f"  в Telegram не отправлен: {'в запасе' if ag['decision'] == 'reserve' else 'в браке'} — {ag.get('reason', '')}")
+    else:
+        p["tg_sent"] = m.tg_send(out, p, hashtags, kind)
+        bumped = ((ag or {}).get("plan") or {}).get("bumped")
+        if bumped and p["tg_sent"]:
+            m.tg_message(f"↩️ Снят со слота @{bumped['account']} {bumped['time']}: ролик {bumped.get('streamer', '')} "
+                         f"({bumped.get('score')}/10, «{bumped.get('caption', '')[:60]}»).\n"
+                         f"Вместо него выше — ролик сильнее ({ag.get('score')}/10). Старый не выкладывай.", kind)
     out.with_suffix(".json").write_text(json.dumps(p, ensure_ascii=False, indent=2), encoding="utf-8")
     log(f"  готово: {res['duration']} с, потенциал {p['potential']}/100"
         + (", отправлен в Telegram" if p["tg_sent"] else ""))

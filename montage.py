@@ -1619,6 +1619,30 @@ def tg_setup():
           f"своё видео в тему «{names.get(found['manual'], 'с командой /my')}».")
 
 
+def tg_message(text, kind="clips"):
+    """Короткое текстовое сообщение в тот же чат или тему, куда идут ролики."""
+    if not TG_TOKEN.exists():
+        return False
+    try:
+        import requests
+        token = TG_TOKEN.read_text(encoding="utf-8-sig").strip()
+        thread = None
+        if TG_TOPICS.exists():
+            topics = json.loads(TG_TOPICS.read_text(encoding="utf-8"))
+            chat, thread = topics["chat_id"], topics.get(kind)
+        else:
+            chat = tg_chat_id(token)
+        if not chat:
+            return False
+        data = {"chat_id": chat, "text": text[:3500]}
+        if thread:
+            data["message_thread_id"] = thread
+        return requests.post(f"https://api.telegram.org/bot{token}/sendMessage", data=data, timeout=30).status_code == 200
+    except Exception as e:
+        print(f"  сообщение в Telegram не ушло: {e}")
+        return False
+
+
 def tg_send(path, p, hashtags, kind="clips"):
     """Отправляет готовый ролик файлом (без сжатия). kind: "clips" для найденных клипов,
     "manual" для своего видео; если настроены темы, каждый вид идёт в свою. True, если ушло."""
