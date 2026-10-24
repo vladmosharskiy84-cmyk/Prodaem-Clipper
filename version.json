@@ -1,17 +1,20 @@
 {
-  "version": "2026.10.22 19:03",
-  "time": 1792695789.1005464,
-  "notes": "Баннер: прозрачность вместо размытия, хромакей Авто/Зелёный/Синий, баннер в своём размере",
+  "version": "2026.10.24 06:47",
+  "time": 1792824425.6254194,
+  "notes": "Карточки без камеры, баннер без лишних краёв, автоочистка диска, учиться у лидеров, агенты",
   "files": {
-    "montage.py": "fe5caaf26fb3b4c16b3f1f7dedc5543883310d3107bcd7d1afb806bef0d0d3aa",
-    "review.py": "9db393a6640240108bfb7c3c1a3ac46e0085e17f34a16918785de982daf653c6",
+    "montage.py": "741add23bb61587efc179eca4eed0a88b7aa7fc0a07934fa8c7fbed949eb083e",
+    "review.py": "672751a80576c49c07a3c26be1eb9ffa1a68df8707586e16e9d69abafe4cc50f",
     "top5.py": "82d6960486bf7e741acbd75e319e8a03a62862cac23fcaf6eee40ee5cb02e7db",
     "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
     "clipfinder.py": "1ad5f5af546ab59c59f9e8ef44a4a821c39252d537848b041dc277cde654151b",
-    "updater.py": "71e9f696cfa1e5c31899b40aaf34478ea4f3d29027ba5dd4c48ad2f90e8f4412",
-    "webapp.py": "d96a155b827baedb98563a81d291651e4f8d3bfcc84a6620170b306e1b417af9",
-    "ui.html": "0fdf62138e5752a0063cc473e33bb846fdc2f154b6dde694fce3a30df2466f87",
+    "updater.py": "ecbebd32788961a5ac26368e1bb412af1da2aa3f1d0f92ecb85b2b3721cb862a",
+    "webapp.py": "55c1cef2d8d228f09d7ddd6135de125d272edf549de9306a29c062d334efcd44",
+    "ui.html": "d5f7f43fff671dbf0eb2234e6b07de86ab935040f3debc1a50692a2b50206f15",
     "logo_src.png": "e43b51bb73da86652be2c2adac971e5b39557d895d84a4c2449e9b99f95c1739",
-    "highlights.py": "b425d8a6e1d540a5d912348eea60d3a75120af0d6e8312003fa3f8bda1d7ef7d"
+    "highlights.py": "111cfd98254055d0d97525de8375fc49ed4a94ee3e13990cf4eb57c862e3012e",
+    "accounts.py": "43fd79e15e74b0f2d7fd7fb008df356823505780ade87b5d60fbef94865b0bc4",
+    "agents.py": "f63eddefad3f1f3825b737bcd85ed0571ee915e2af618e22992025053e992413",
+    "leaders.py": "1edf5e223fbc2655afc2aa47c7828cafdc3bb515867e8a6c8a1de21fb432d3b9"
   }
 }

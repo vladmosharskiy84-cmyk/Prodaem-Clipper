@@ -250,7 +250,7 @@ def snapshot(since):
     now = time.time()
     for j in jobs:
         j["sec"] = int((j.get("end") or now) - j["start"]) if j.get("start") else 0
-    return {"events": ev, "seq": A.seq, "jobs": jobs, "busy": bool(A.busy) or VOD["busy"], "wait": A.jobs.qsize(),
+    return {"events": ev, "seq": A.seq, "jobs": jobs, "busy": bool(A.busy) or VOD["busy"] or TT["busy"], "wait": A.jobs.qsize(),
             "done": A.done, "failed": A.failed, "queue_ver": A.queue_ver, "finding": A.finding,
             "upd": "ready" if A.upd["info"] else ("busy" if A.upd["busy"] else "")}
 
@@ -400,6 +400,8 @@ def worker():
         A.busy = job["clip"].get("title", "")[:28] or "клип"
         out, err = None, None
         try:
+            if not m.ensure_space(2.0, A.log, skip_vods=VOD["busy"]):
+                raise RuntimeError(f"нет места на диске (свободно {m.free_gb():.1f} ГБ): удали лишнее и запусти снова")
             if A.enc is None:
                 A.enc = m.pick_encoder(A.cfg)
             out = rv.run_job(job, A.cfg, A.enc, log=A.log)
@@ -420,8 +422,13 @@ def worker():
                     sent = bool(json.loads(Path(out).with_suffix(".json").read_text(encoding="utf-8")).get("tg_sent")) if ok else False
                 except Exception:
                     pass
-                j.update(state="done" if ok else "error", end=time.time(), out=str(out) if out else None,
-                         stage=("готово" + (" · отправлено в Telegram" if sent else "")) if ok else (err or "не получилось")[:140])
+                stage = ("готово" + (" · отправлено в Telegram" if sent else "")) if ok else (err or "не получилось")[:140]
+                ag = job.get("agents")
+                if ok and ag:                    # что решили критик, судья и продюсер
+                    pl = ag.get("plan") or {}
+                    stage = (f"✓ {ag.get('score', '?')}/10 → @{pl['account']} {pl.get('when', '')}" if pl
+                             else f"✕ в брак: {ag.get('reason', '')}")[:140]
+                j.update(state="done" if ok else "error", end=time.time(), out=str(out) if out else None, stage=stage)
         A.busy = None
         lock.close()
         name = job.get("streamer") or job["clip"].get("streamer") or "клип"
@@ -534,6 +541,22 @@ def find_clips():
     return {"started": True}
 
 
+
+def cleanup_loop():
+    """Раз в 6 часов убирает временные файлы, чтобы диск не забивался (звук стримов, копии, исходники)."""
+    time.sleep(60)
+    while not A.quit.is_set():
+        try:
+            if not (A.busy or VOD["busy"] or LD["busy"] or TT["busy"]):
+                freed, what = m.cleanup(skip_vods=VOD["busy"])
+                if freed > 200e6:
+                    A.log(f"очистка: освобождено {freed / 1e9:.1f} ГБ (" + ", ".join(what) + ")")
+            if m.free_gb() < 3:
+                A.toast(f"На диске осталось {m.free_gb():.1f} ГБ: программа почистила, что могла", ok=False)
+        except Exception as e:
+            A.log(f"очистка не сработала: {e}")
+        A.quit.wait(6 * 3600)
+
 def auto_find_loop():
     time.sleep(3)
     while not A.quit.is_set():
@@ -556,7 +579,7 @@ def dialog_loop():
         try:
             kind, box = A.dialogs.get(timeout=1)
         except queue.Empty:
-            busy = A.busy or A.jobs.qsize() or A.finding or VOD["busy"]
+            busy = A.busy or A.jobs.qsize() or A.finding or VOD["busy"] or TT["busy"] or LD["busy"]
             if ROLE["child"]:
                 if not parent_alive():
                     A.parent_dead = getattr(A, "parent_dead", 0) + 1
@@ -751,7 +774,18 @@ def banners(d):
         dst = BASE / src.name
         if src.resolve() != dst.resolve():
             shutil.copy2(src, dst)               # баннер должен лежать в папке программы
-        return {"file": dst.name, "name": src.stem.split(".")[0]}
+        auto = None
+        try:
+            auto = m.banner_autocrop(dst)           # сразу убираем лишние края вокруг карточки баннера
+        except Exception:
+            pass
+        return {"file": dst.name, "name": src.stem.split(".")[0], "auto": auto}
+    if act == "autocrop":
+        try:
+            auto = m.banner_autocrop(m.find_banner(d.get("file", "")))
+        except Exception as e:
+            return {"error": f"не получилось: {e}"}
+        return {"auto": auto} if auto else {"error": "лишних краёв не нашёл: баннер и так занимает весь кадр"}
     if act == "preview":
         b = dict(d["banner"])
         m.CACHE.mkdir(exist_ok=True)
@@ -784,6 +818,118 @@ def banners(d):
         return {"ok": True}
     return {}
 
+
+
+TT = {"busy": False, "stage": "", "error": "", "ver": 0}
+
+
+def tt_req(d):
+    """Анализ TikTok-аккаунтов: ники, цель, сбор в фоне и последний отчёт."""
+    try:
+        import accounts
+    except ImportError:
+        return {"error": "Для анализа аккаунтов нужен файл accounts.py: поставь обновление программы."}
+    act = d.get("act")
+    if act == "get":
+        plan, roles = [], {}
+        try:
+            import agents
+            plan = sorted(agents._load_schedule(), key=lambda x: (x["day"], x["time"]))
+            roles = agents.settings()["roles"]
+        except Exception:
+            pass
+        return {"settings": accounts.load_settings(), "report": accounts.last_report(), "plan": plan, "roles": roles,
+                "busy": TT["busy"], "stage": TT["stage"], "error": TT["error"]}
+    if act == "roles":                           # роли аккаунтов для продюсера: «ник — роль» по строке
+        st = accounts.load_settings()
+        roles = {}
+        for line in str(d.get("text") or "").splitlines():
+            mt = re.match(r"\s*@?([\w.\-]+)\s*[—\-:]+\s*(.+)", line)
+            if mt:
+                roles[mt.group(1).lower()] = mt.group(2).strip()[:160]
+        st["roles"] = roles
+        if roles and not st.get("accounts"):
+            st["accounts"] = list(roles)
+        accounts.save_settings(st)
+        return {"ok": True, "roles": roles}
+    if act == "status":
+        return {"busy": TT["busy"], "stage": TT["stage"], "error": TT["error"], "ver": TT["ver"],
+                "report": None if TT["busy"] else accounts.last_report()}
+    if act == "open":
+        url = str(d.get("url") or "")
+        if url.startswith("https://www.tiktok.com/"):
+            import webbrowser
+            webbrowser.open(url)
+        return {"ok": True}
+    if act == "run":
+        if TT["busy"]:
+            return {"error": "Анализ уже идёт"}
+        handles = [h for h in re.split(r"[\s,;]+", d.get("handles") or "") if h.strip()]
+        goal = int(d.get("goal") or 100000)
+        TT.update(busy=True, stage="начинаю", error="")
+
+        def say(t):
+            TT["stage"] = str(t)[:160]
+            A.log("аналитика: " + str(t))
+
+        def work():
+            try:
+                accounts.analyze(handles, goal, A.cfg, say, deep=bool(d.get("deep", True)))
+                A.toast("Анализ аккаунтов готов")
+            except accounts.Stop as e:
+                TT["error"] = str(e)
+                A.log("аналитика: " + str(e))
+            except Exception as e:
+                TT["error"] = f"анализ не получился: {e}"
+                A.log("аналитика: " + TT["error"])
+            finally:
+                TT["busy"] = False
+                TT["ver"] += 1
+
+        threading.Thread(target=work, daemon=True).start()
+        return {"ok": True}
+    return {}
+
+
+LD = {"busy": False, "stage": "", "error": "", "ver": 0}
+
+
+def leaders_req(d):
+    """Учиться у лидеров: ссылки на популярные ролики и профили TikTok → книга правил для критика и судьи."""
+    try:
+        import leaders
+    except ImportError:
+        return {"error": "Нужен файл leaders.py: поставь обновление программы."}
+    act = d.get("act")
+    if act in ("get", "status"):
+        return {"busy": LD["busy"], "stage": LD["stage"], "error": LD["error"],
+                "book": None if LD["busy"] else leaders.load()}
+    if act == "run":
+        if LD["busy"]:
+            return {"error": "Разбор уже идёт"}
+        text = d.get("links") or ""
+        if not leaders.parse_links(text):
+            return {"error": "Вставь ссылки на ролики или профили из TikTok"}
+        LD.update(busy=True, stage="начинаю", error="")
+
+        def say(t):
+            LD["stage"] = str(t)[:160]
+            A.log("лидеры: " + str(t))
+
+        def work():
+            try:
+                leaders.analyze(text, A.cfg, say)
+                A.toast("Книга правил готова: критик и судья теперь сверяются с ней")
+            except (leaders.Stop, Exception) as e:
+                LD["error"] = str(e)[:300]
+                A.log("лидеры: " + LD["error"])
+            finally:
+                LD["busy"] = False
+                LD["ver"] += 1
+
+        threading.Thread(target=work, daemon=True).start()
+        return {"ok": True}
+    return {}
 
 # обновления
 def update(d):
@@ -871,6 +1017,8 @@ ACTIONS = {
     "settings": settings,
     "tg_topics": tg_topics,
     "banners": banners,
+    "tt": tt_req,
+    "leaders": leaders_req,
     "update": update,
     "look": look,
 }
@@ -1224,6 +1372,7 @@ def run(port=0, window=True, token=None, parent=0, start=""):
         start_children()
     threading.Thread(target=worker, daemon=True).start()
     threading.Thread(target=auto_find_loop, daemon=True).start()
+    threading.Thread(target=cleanup_loop, daemon=True).start()
     threading.Thread(target=prep_worker, daemon=True).start()
 
     def fonts_job():                             # шрифты для субтитров скачиваются один раз

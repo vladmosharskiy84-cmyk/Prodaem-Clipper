@@ -376,6 +376,8 @@ def run(src, n=10, cfg=None, say=print, should_stop=lambda: False):
     if not info["dur"]:
         raise Stop("не получилось узнать длину видео")
     say(f"«{info['title'][:60]}», {int(info['dur'] // 3600)} ч {int(info['dur'] % 3600 // 60)} мин")
+    if not m.ensure_space(4.0, say, skip_vods=True):
+        raise Stop(f"нет места на диске (свободно {m.free_gb():.1f} ГБ): для нарезки стрима нужно хотя бы 4 ГБ")
     wav = get_audio(info, say)
     if should_stop():
         raise Stop("остановлено")

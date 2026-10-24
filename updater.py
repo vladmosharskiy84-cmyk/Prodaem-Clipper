@@ -20,7 +20,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 URL_FILE = BASE / "update_url.txt"
 STATE_FILE = BASE / "update_state.json"
-FILES = ["montage.py", "review.py", "top5.py", "fixcam.py", "clipfinder.py", "updater.py", "webapp.py", "ui.html", "logo_src.png", "highlights.py"]
+FILES = ["montage.py", "review.py", "top5.py", "fixcam.py", "clipfinder.py", "updater.py", "webapp.py", "ui.html", "logo_src.png", "highlights.py", "accounts.py", "agents.py", "leaders.py"]
 
 
 def base_url():

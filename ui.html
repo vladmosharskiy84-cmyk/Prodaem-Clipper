@@ -240,6 +240,38 @@ body.leaving .app{opacity:0;transform:scale(.985);transition:opacity .35s,transf
 .app{animation:appIn .5s var(--ease) both}
 @keyframes appIn{from{opacity:0;transform:scale(.985)}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+/* аналитика TikTok */
+.dlg.tt{width:min(1120px,100%)}
+.ttform{display:grid;grid-template-columns:minmax(0,1fr) 150px auto;gap:10px;align-items:end;margin:14px 0 6px}
+.ttform textarea{height:42px;min-height:42px;resize:vertical;padding:11px 13px;line-height:1.3;font:600 13px var(--body)}
+.ttstat{display:flex;align-items:center;gap:10px;min-height:22px;margin:8px 0 4px;color:var(--mut);font-size:13px}
+.ttcards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
+.ttc{background:var(--panel2);border:1px solid var(--line);border-radius:16px;padding:14px 16px;animation:pop .45s var(--ease) both}
+.ttc small{display:block;color:var(--dim);font:700 10.5px var(--body);letter-spacing:.13em;text-transform:uppercase}
+.ttc b{display:block;font:800 26px var(--display);margin:6px 0 2px;letter-spacing:-.01em}
+.ttc span{color:var(--mut);font-size:12px}
+.ttbar{height:8px;border-radius:9px;background:#0003;overflow:hidden;margin-top:8px}.ttbar i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,var(--a1),var(--a2));transition:width 1s var(--ease)}
+.ttmain{border-radius:16px;padding:16px 18px;margin:0 0 12px;background:linear-gradient(120deg,color-mix(in srgb,var(--a1) 22%,transparent),color-mix(in srgb,var(--a2) 12%,transparent));border:1px solid color-mix(in srgb,var(--a1) 45%,transparent);font-size:15px;font-weight:700;line-height:1.5}
+.ttmain small{display:block;font:700 10.5px var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--txt);opacity:.7;margin-bottom:4px}
+.ttgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.ttbox{background:var(--panel2);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
+.ttbox h4{margin:0 0 8px;font:700 11px var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.ttbox ul,.ttbox ol{margin:0;padding-left:18px;line-height:1.55;font-size:13px}.ttbox li{margin:3px 0}
+.ttbox.good h4{color:var(--ok)}.ttbox.bad h4{color:var(--bad)}
+.tttab{width:100%;border-collapse:collapse;font-size:13px}
+.tttab th{text-align:left;color:var(--dim);font:700 10.5px var(--body);letter-spacing:.1em;text-transform:uppercase;padding:6px 8px;border-bottom:1px solid var(--line)}
+.tttab td{padding:8px;border-bottom:1px solid #ffffff0a;vertical-align:top}
+.tttab td.n{font-family:var(--mono);white-space:nowrap}
+.tttab .verd{color:var(--mut);font-size:12px;margin-top:3px}
+.vrow{display:grid;grid-template-columns:64px minmax(0,1fr);gap:10px;align-items:center;padding:8px 10px;border-radius:12px;cursor:pointer;transition:background .2s}
+.vrow:hover{background:#ffffff0a}
+.vrow .v{font:800 15px var(--display)}.vrow .d{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.vrow .d small{display:block;color:var(--dim);font-size:11.5px;margin-top:2px}
+.tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
+.tag{font:700 10.5px var(--body);padding:3px 7px;border-radius:7px;background:#ffffff10;color:var(--mut);white-space:nowrap}.tag.g{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}.tag.r{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.bars{display:flex;flex-direction:column;gap:6px;font-size:12.5px}.bars div{display:grid;grid-template-columns:110px minmax(0,1fr) 70px;gap:8px;align-items:center}
+.bars i{display:block;height:9px;border-radius:9px;background:linear-gradient(90deg,var(--a1),var(--a2))}.bars em{font-style:normal;color:var(--mut);font-family:var(--mono);text-align:right}
+@media (max-width:820px){.ttcards{grid-template-columns:repeat(2,minmax(0,1fr))}.ttgrid{grid-template-columns:1fr}.ttform{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -261,6 +293,8 @@ body.leaving .app{opacity:0;transform:scale(.985);transition:opacity .35s,transf
       <div class="qbtns">
         <button class="btn" id="find"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Найти новые клипы</span></button>
         <button class="btn" id="vodbtn" style="--k:var(--a2)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="14" height="14" rx="2"/><path d="M16 10l6-3v10l-6-3M6 9l4 3-4 3"/></svg>Нарезать стрим…</button>
+        <button class="btn" id="ttbtn" style="--k:var(--ok)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18M6 16v-5M11 16V7M16 16v-8M21 16V4"/></svg>Аналитика TikTok</button>
+        <button class="btn" id="ldbtn" style="--k:var(--a1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l2.6 5.5 6 .8-4.4 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6L3.4 9.3l6-.8z"/></svg>Учиться у лидеров</button>
         <button class="btn" id="addf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Добавить свой файл</button>
         <button class="btn" id="strm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M17 11l2 2 4-4"/></svg>Стримеры</button>
       </div>
@@ -657,6 +691,98 @@ $("#vodbtn").onclick=()=>{const w=modal(`<h3>Нарезать стрим</h3><p 
   w.querySelector("#v_go").onclick=()=>go("url");w.querySelector("#v_file").onclick=()=>go("file");
   w.querySelector("#v_src").onkeydown=e=>{if(e.key==="Enter")go("url");};w.querySelector("#v_src").focus();};
 
+/* аналитика TikTok */
+const fN=n=>{n=+n||0;return n>=1e6?(n/1e6).toFixed(1)+"М":n>=1000?(n/1e3).toFixed(n>=1e4?0:1).replace(/\.0$/,"")+"к":String(n)};
+$("#ttbtn").onclick=async()=>{const r0=await api("tt",{act:"get"});if(r0.error)return toast(r0.error,false);
+  const w=modal(`<h3>Аналитика TikTok</h3><p class="sub">Программа соберёт все ролики с твоих аккаунтов, сравнит прострелы и провалы, найдёт дубли между аккаунтами,
+    посмотрит, как начинаются ролики, и Claude напишет, что мешает охвату и что выкладывать дальше. Запускай раз в день: так видно рост.</p>
+    <div class="ttform"><div><div class="label">Аккаунты (через пробел или с новой строки)</div><textarea class="inp" id="tt_h" placeholder="@prodaem.cs @prodaem.tw …"></textarea></div>
+      <div><div class="label">Цель на ролик</div><input class="inp" id="tt_g" type="number" min="1000" step="1000"></div>
+      <button class="btn small-primary" id="tt_go" style="height:42px">Собрать анализ</button></div>
+    <label class="note" style="display:flex;gap:8px;align-items:center;text-align:left;margin:4px 0 0"><input type="checkbox" id="tt_deep" checked> разбирать начало лучших и худших роликов (скачает около 10 роликов, дольше на пару минут)</label>
+    <div class="ttgrid" style="margin-top:12px"><div class="ttbox"><h4>Роли аккаунтов для продюсера</h4>
+      <textarea class="inp" id="tt_roles" style="height:120px;padding:10px 12px;line-height:1.5;resize:vertical"></textarea>
+      <div class="flex" style="margin-top:8px"><button class="btn sm" id="tt_rsave">Сохранить роли</button><span class="res" id="tt_rmsg"></span></div></div>
+      <div class="ttbox"><h4>План публикаций от продюсера</h4><div id="tt_plan" style="max-height:170px;overflow:auto"></div></div></div>
+    <div class="ttstat" id="tt_st"></div><div id="tt_rep"></div>`,"tt");
+  w.querySelector("#tt_roles").value=Object.entries(r0.roles||{}).map(([a,t])=>"@"+a+" — "+t).join("\n");
+  w.querySelector("#tt_rsave").onclick=async()=>{const r=await api("tt",{act:"roles",text:w.querySelector("#tt_roles").value});
+    w.querySelector("#tt_rmsg").textContent=r.ok?"сохранено":"не сохранилось";};
+  const today=new Date().toISOString().slice(0,10),plan=(r0.plan||[]).filter(x=>x.day>=today);
+  w.querySelector("#tt_plan").innerHTML=plan.length?plan.map(x=>`<div style="padding:6px 0;border-bottom:1px solid #ffffff0a;font-size:12.5px"><b>${esc(x.day.slice(5).split("-").reverse().join("."))} ${esc(x.time)}</b> · @${esc(x.account)}<div class="note" style="text-align:left;margin:2px 0 0">${esc(x.caption||"")}</div></div>`).join(""):'<div class="empty">Пока пусто: продюсер расписывает ролики после монтажа</div>';
+  const st=r0.settings||{};w.querySelector("#tt_h").value=(st.accounts||[]).map(a=>"@"+a).join(" ");w.querySelector("#tt_g").value=st.goal||100000;
+  const S1=w.querySelector("#tt_st"),R=w.querySelector("#tt_rep");let tm=null;
+  const status=(busy,stage,err)=>{S1.innerHTML=busy?`<span class="spin"></span><span>${esc(stage||"собираю…")}</span>`:err?`<span class="res bad">${esc(err)}</span>`:"";w.querySelector("#tt_go").disabled=!!busy;};
+  const poll=async()=>{if(!w.isConnected)return;const r=await api("tt",{act:"status"});status(r.busy,r.stage,r.error);
+    if(r.busy){tm=setTimeout(poll,1200);return}if(r.report)render(r.report);};
+  w.querySelector("#tt_go").onclick=async()=>{const r=await api("tt",{act:"run",handles:w.querySelector("#tt_h").value,goal:+w.querySelector("#tt_g").value||100000,deep:w.querySelector("#tt_deep").checked});
+    if(r.error){status(false,"",r.error);return}status(true,"начинаю");clearTimeout(tm);tm=setTimeout(poll,800);};
+  const vrow=(v,i)=>{const h=v.hook||{},t=[];
+    if(h.hook_loud!=null)t.push(`<span class="tag ${h.hook_loud>=2?"g":h.hook_loud<0?"r":""}" title="первые 2 секунды громче обычного">звук начала ${h.hook_loud>0?"+":""}${h.hook_loud} дБ</span>`);
+    if(h.hook_motion!=null)t.push(`<span class="tag ${h.hook_motion>=1.3?"g":h.hook_motion<0.8?"r":""}" title="первые 2 секунды динамичнее обычного">движение ×${h.hook_motion}</span>`);
+    if(h.dead_air)t.push(`<span class="tag ${h.dead_air>=2?"r":""}" title="тишина дольше секунды">тишина ${h.dead_air} с</span>`);
+    if(h.peak_at!=null&&v.dur)t.push(`<span class="tag" title="самый громкий момент">пик на ${h.peak_at} с</span>`);
+    if(v.settings)t.push(`<span class="tag">${esc(v.settings.streamer||"")} · ${esc(v.settings.style||"")}</span>`);
+    return `<div class="vrow" data-u="${esc(v.url||"")}" style="animation:pop .4s var(--ease) ${i*30}ms both"><div class="v">${fN(v.views)}</div>
+      <div class="d">${esc(v.desc||"без описания")}<small>@${esc(v.acc)} · ${v.dur?Math.round(v.dur)+" с":""} · ${esc(v.posted||"")} · вовлечённость ${v.eng}% · репостов ${fN(v.shares)} · сохранений ${fN(v.saves)}</small>
+      ${t.length?`<div class="tags">${t.join("")}</div>`:""}</div></div>`;};
+  const list=a=>a&&a.length?`<ul>${a.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:'<div class="empty">—</div>';
+  const bars=a=>{const mx=Math.max(1,...(a||[]).map(x=>x.median));return (a||[]).length?`<div class="bars">${a.map(x=>`<div><span>${esc(x.label)}</span><i style="width:${Math.max(3,x.median/mx*100)}%"></i><em>${fN(x.median)} · ${x.n}</em></div>`).join("")}</div>`:'<div class="empty">мало данных</div>';};
+  const render=rep=>{const ai=rep.ai||{},goal=rep.goal||100000,b=rep.best||{},pct=Math.min(100,b.views/goal*100);
+    const A=rep.accounts||{},names=Object.keys(A),all=Object.values(A);
+    const stuck=all.length?Math.round(all.reduce((s,a)=>s+a.stuck*a.videos,0)/Math.max(1,all.reduce((s,a)=>s+a.videos,0))):0;
+    const when=new Date(rep.time*1000).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+    const verd=Object.fromEntries((ai.accounts||[]).map(a=>[String(a.acc||"").replace(/^@/,"").toLowerCase(),a]));
+    let h=`<div class="ttcards">
+      <div class="ttc"><small>Лучший ролик → цель</small><b>${fN(b.views)}</b><span>${pct.toFixed(pct<10?1:0)}% от ${fN(goal)} · @${esc(b.acc||"")}</span><div class="ttbar"><i style="width:${pct}%"></i></div></div>
+      <div class="ttc"><small>Просмотров за 7 дней</small><b>${fN(rep.growth_7d)}</b><span>${rep.has_history?"по снимкам":"ролики за неделю (рост по дням будет со 2-го запуска)"}</span></div>
+      <div class="ttc"><small>Застряли на пробе</small><b style="color:${stuck>60?"var(--bad)":"var(--txt)"}">${stuck}%</b><span>роликов до 700 просмотров</span></div>
+      ${rep.money?`<div class="ttc"><small>В выплату за 7 дней</small><b style="color:var(--ok)">$${rep.money.usd}</b><span>из $${rep.money.goal} · роликов ${rep.money.min_views/1000}к+: ${rep.money.paid} из ${rep.money.week}</span><div class="ttbar"><i style="width:${Math.min(100,rep.money.usd/rep.money.goal*100)}%"></i></div></div>`
+        :`<div class="ttc"><small>Роликов разобрано</small><b>${rep.total_videos}</b><span>${names.length} акк. · ${when}</span></div>`}</div>`;
+    if(rep.money&&rep.money.near.length)h+=`<div class="ttbox" style="margin-bottom:12px"><h4>Почти в выплате (до ${rep.money.min_views/1000}к не хватает чуть-чуть)</h4>${rep.money.near.map(v=>`<div class="vrow" data-u="${esc(v.url)}"><div class="v">${fN(v.views)}</div><div class="d">${esc(v.desc||"без описания")}<small>@${esc(v.acc)}</small></div></div>`).join("")}</div>`;
+    if(rep.errors&&rep.errors.length)h+=`<p class="res bad" style="margin:0 0 10px">${rep.errors.map(esc).join("<br>")}</p>`;
+    if(ai.main)h+=`<div class="ttmain"><small>Главное</small>${esc(ai.main)}</div>`;
+    else h+=`<p class="note" style="text-align:left">Разбора от Claude нет: проверь ключ Claude в настройках. Цифры ниже собраны.</p>`;
+    if(ai.main)h+=`<div class="ttgrid"><div class="ttbox good"><h4>Что работает</h4>${list(ai.works)}</div><div class="ttbox bad"><h4>Что убивает охват</h4>${list(ai.kills)}</div>
+      <div class="ttbox"><h4>План на 7 дней</h4>${list(ai.plan)}</div><div class="ttbox"><h4>Какие клипы брать</h4>${list(ai.next_clips)}</div></div>`;
+    h+=`<div class="ttbox" style="margin-bottom:12px"><h4>Аккаунты</h4><table class="tttab"><tr><th>Аккаунт</th><th>Роликов</th><th>Медиана</th><th>Максимум</th><th>Прострелов 10к+</th><th>Застряли</th><th>Вовлеч.</th><th>За неделю</th></tr>
+      ${names.map(n=>{const a=A[n],v=verd[n];return `<tr><td><b>@${esc(n)}</b>${v?`<div class="verd">${esc(v.verdict||"")}${(v.fix||[]).length?"<br>→ "+v.fix.map(esc).join("<br>→ "):""}</div>`:""}</td>
+        <td class="n">${a.videos}</td><td class="n">${fN(a.median)}</td><td class="n">${fN(a.max)}</td><td class="n">${a.hits}</td><td class="n" style="color:${a.stuck>60?"var(--bad)":"inherit"}">${a.stuck}%</td><td class="n">${a.eng}%</td><td class="n">${a.last7} шт.</td></tr>`}).join("")}</table></div>`;
+    if((rep.duplicates||[]).length)h+=`<div class="ttbox bad" style="margin-bottom:12px"><h4>Один клип на нескольких аккаунтах: ${rep.duplicates.length}</h4>
+      <p class="note" style="text-align:left;margin:0 0 6px">TikTok обычно показывает только первую копию, остальные режет. Давай каждому аккаунту свои клипы.</p>
+      ${rep.duplicates.slice(0,6).map(g=>`<div style="margin:6px 0">${g.map(v=>`<span class="tag">@${esc(v.acc)} · ${fN(v.views)}</span>`).join(" ")} <span class="note">${esc((g[0].desc||"").slice(0,70))}</span></div>`).join("")}</div>`;
+    h+=`<div class="ttgrid"><div class="ttbox"><h4>Просмотры по длине ролика</h4>${bars(rep.by_duration)}</div><div class="ttbox"><h4>По времени выхода</h4>${bars(rep.by_hour)}</div></div>`;
+    const sp=rep.settings||{};if(sp.streamer||sp.style)h+=`<div class="ttgrid">${sp.streamer?`<div class="ttbox"><h4>Стримеры (ролики из клиппера)</h4>${bars(sp.streamer.slice(0,8).map(x=>({label:x.value,median:x.median,n:x.n})))}</div>`:""}
+      ${sp.style?`<div class="ttbox"><h4>Стили монтажа</h4>${bars(sp.style.slice(0,8).map(x=>({label:x.value,median:x.median,n:x.n})))}</div>`:""}</div>`;
+    h+=`<div class="ttgrid"><div class="ttbox good"><h4>Прострелы</h4>${(rep.top||[]).map(vrow).join("")}</div><div class="ttbox bad"><h4>Провалы за месяц</h4>${(rep.flops||[]).map(vrow).join("")}</div></div>`;
+    R.innerHTML=h;R.querySelectorAll(".vrow").forEach(el=>el.onclick=()=>el.dataset.u&&api("tt",{act:"open",url:el.dataset.u}));};
+  status(r0.busy,r0.stage,r0.error);if(r0.busy)poll();else if(r0.report)render(r0.report);};
+
+/* учиться у лидеров */
+$("#ldbtn").onclick=async()=>{const r0=await api("leaders",{act:"get"});if(r0.error&&!r0.book&&!r0.busy&&/leaders\.py/.test(r0.error))return toast(r0.error,false);
+  const w=modal(`<h3>Учиться у лидеров</h3><p class="sub">Вставь ссылки на популярные ролики по Доте или на профили, которые стабильно собирают много.
+    Программа скачает их, посмотрит начало, кадры и речь, Claude разберёт каждый и напишет книгу правил: что делает прострел.
+    Критик и судья будут проверять твои ролики по этим правилам.</p>
+    <textarea class="inp" id="ld_l" style="height:120px;padding:10px 12px;line-height:1.5;resize:vertical" placeholder="https://www.tiktok.com/@ник/video/…&#10;https://vm.tiktok.com/…&#10;https://www.tiktok.com/@ник  (профиль: возьмутся его лучшие ролики)"></textarea>
+    <div class="flex" style="margin-top:10px"><button class="btn small-primary" id="ld_go">Изучить</button><span class="note" style="margin:0">10–20 роликов разбираются минут 5–10, это стоит несколько десятков центов по ключу Claude</span></div>
+    <div class="ttstat" id="ld_st"></div><div id="ld_rep"></div>`,"tt");
+  const S1=w.querySelector("#ld_st"),R=w.querySelector("#ld_rep");let tm=null;
+  const status=(b,st,err)=>{S1.innerHTML=b?`<span class="spin"></span><span>${esc(st||"разбираю…")}</span>`:err?`<span class="res bad">${esc(err)}</span>`:"";w.querySelector("#ld_go").disabled=!!b;};
+  const list=a=>a&&a.length?`<ul>${a.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:'<div class="empty">—</div>';
+  const render=pb=>{if(!pb||!pb.book)return;const b=pb.book,when=new Date(pb.time*1000).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+    w.querySelector("#ld_l").value=w.querySelector("#ld_l").value||(pb.links||[]).join("\n");
+    let h=`<div class="ttmain" style="margin-top:12px"><small>Главное · разобрано роликов: ${(pb.videos||[]).length} · ${when}</small>${esc(b.summary||"")}</div>
+      <div class="ttgrid"><div class="ttbox good"><h4>Правила для критика и судьи</h4>${list(b.rules)}</div><div class="ttbox"><h4>Как начинаются прострелы</h4>${list(b.hooks)}</div>
+      <div class="ttbox"><h4>Какие моменты залетают</h4>${list(b.moments)}</div><div class="ttbox bad"><h4>Что убивает охват</h4>${list(b.avoid)}</div></div>
+      <div class="ttgrid"><div class="ttbox"><h4>Длина</h4><p style="margin:0;font-size:13px;line-height:1.5">${esc(b.length||"—")}</p></div><div class="ttbox"><h4>Описания</h4><p style="margin:0;font-size:13px;line-height:1.5">${esc(b.captions||"—")}</p></div></div>
+      <div class="ttbox"><h4>Разобранные ролики</h4>${(pb.videos||[]).slice().sort((a,b)=>b.views-a.views).map((v,i)=>`<div class="vrow" data-u="${esc(v.url)}" style="animation:pop .4s var(--ease) ${i*25}ms both"><div class="v">${fN(v.views)}</div>
+        <div class="d">${esc((v.breakdown||{}).moment||v.desc||"")}<small>@${esc(v.acc)} · ${Math.round(v.dur||0)} с · ${esc((v.breakdown||{}).why||"")}</small></div></div>`).join("")}</div>`;
+    if(pb.errors&&pb.errors.length)h+=`<p class="res bad">${pb.errors.map(esc).join("<br>")}</p>`;
+    R.innerHTML=h;R.querySelectorAll(".vrow").forEach(el=>el.onclick=()=>el.dataset.u&&api("tt",{act:"open",url:el.dataset.u}));};
+  const poll=async()=>{if(!w.isConnected)return;const r=await api("leaders",{act:"status"});status(r.busy,r.stage,r.error);if(r.busy){tm=setTimeout(poll,1500);return}render(r.book);};
+  w.querySelector("#ld_go").onclick=async()=>{const r=await api("leaders",{act:"run",links:w.querySelector("#ld_l").value});if(r.error){status(false,"",r.error);return}status(true,"начинаю");clearTimeout(tm);tm=setTimeout(poll,1000);};
+  status(r0.busy,r0.stage,r0.error);if(r0.busy)poll();else render(r0.book);};
+
 /* стримеры */
 $("#strm").onclick=async()=>{const r=await api("streamers",{act:"list"});
   const w=modal(`<h3>Пул стримеров</h3><p class="sub">У этих стримеров программа ищет клипы. Можно вставить ник или ссылку на канал.</p>
@@ -694,6 +820,7 @@ async function openBanners(){const r=await api("banners",{act:"get"});const B=JS
       <div class="kv"><span class="label" style="margin:0">Хромакей</span><div class="seg" id="b_ck"><button data-c="auto">Авто</button><button data-c="green">Зелёный</button><button data-c="blue">Синий</button><button data-c="off">Не вырезать</button></div><span></span></div>
       <div class="kv" id="b_simrow"><span class="label" style="margin:0">Сила</span><input type="range" id="b_sim" min="0.04" max="0.35" step="0.01" value="${b.chroma_sim||0.12}"><b id="b_simv"></b></div>
       <div class="kv"><span class="label" style="margin:0">Размер</span><div class="seg" id="b_sz"><button data-s="full">Как в файле</button><button data-s="band">Полоса на всю ширину</button></div><span></span></div>
+      <div class="kv"><span class="label" style="margin:0">Края</span><div class="flex" style="gap:8px"><button class="btn sm" id="b_crop">Убрать лишние края</button><button class="btn sm" id="b_uncrop">Как в файле</button></div><span></span></div>
       <div class="bprev" id="b_pv"><span class="spin"></span></div><p class="note" id="b_note"></p>
       <div class="flex" style="margin-top:8px"><button class="btn sm" id="b_main">★ Сделать основным</button></div>`;
     const lab=()=>{E.querySelector("#b_spv").textContent=(+b.speed||1).toFixed(2)+"x";E.querySelector("#b_blv").textContent=b.fade?b.fade+"%":"нет";
@@ -704,15 +831,18 @@ async function openBanners(){const r=await api("banners",{act:"get"});const B=JS
     E.querySelector("#b_sp").oninput=e=>{b.speed=+e.target.value;lab();prev(400);};E.querySelector("#b_bl").oninput=e=>{b.fade=+e.target.value;lab();prev(400);};
     E.querySelectorAll("#b_ck button").forEach(x=>x.onclick=()=>{b.chroma=x.dataset.c;lab();prev(0);});
     E.querySelector("#b_sim").oninput=e=>{b.chroma_sim=+e.target.value;lab();prev(400);};
-    E.querySelectorAll("#b_sz button").forEach(x=>x.onclick=()=>{b.size=x.dataset.s;b.crop=null;lab();prev(0);});
+    E.querySelectorAll("#b_sz button").forEach(x=>x.onclick=()=>{b.size=x.dataset.s;if(x.dataset.s==="band"){b.crop=null;b.round=0;}lab();prev(0);});
     E.querySelector("#b_main").onclick=()=>{use=sel;list();toast("Основной баннер: "+sel);};
+    E.querySelector("#b_crop").onclick=async()=>{const r=await api("banners",{act:"autocrop",file:b.file});if(r.error)return toast(r.error,false);
+      b.crop=r.auto.crop;b.round=r.auto.round;b.size="full";lab();prev(0);toast("Края обрезаны, углы скруглены");};
+    E.querySelector("#b_uncrop").onclick=()=>{b.crop=null;b.round=0;lab();prev(0);};
     E.querySelector("#b_name").onchange=e=>{const n=e.target.value.trim();if(!n||B[n])return;B[n]=B[sel];delete B[sel];if(use===sel)use=n;sel=n;list();};prev(0);};
   const prev=ms=>{clearTimeout(pvT);pvT=setTimeout(async()=>{const my=++gen,b=B[sel];if(!b)return;const P=w.querySelector("#b_pv");P.style.opacity=.6;
     const r=await api("banners",{act:"preview",banner:b});if(my!==gen||!w.isConnected)return;P.style.opacity=1;
     if(r.error){P.innerHTML=`<p class="note warn" style="padding:16px">${esc(r.error)}</p>`;return}
     P.innerHTML=`<img src="/banner.png?k=${K}&v=${r.ver}" alt="">`;w.querySelector("#b_note").textContent=`Файл ${r.file} · в ролике ${r.w}×${r.h} · идёт ${r.sec} с (без ускорения ${r.dur} с)`;},ms);};
   w.querySelector("#b_add").onclick=async()=>{const r=await api("banners",{act:"add"});if(r.error)return toast(r.error,false);if(r.cancel)return;
-    let n=r.name,i=2;while(B[n])n=r.name+" "+i++;B[n]={file:r.file,speed:1,fade:0,crop:null,chroma:"auto",chroma_sim:0.12,size:"full"};if(!use)use=n;sel=n;list();editor();};
+    let n=r.name,i=2;while(B[n])n=r.name+" "+i++;B[n]={file:r.file,speed:1,fade:0,crop:r.auto?r.auto.crop:null,round:r.auto?r.auto.round:0,chroma:"auto",chroma_sim:0.12,size:"full"};if(!use)use=n;sel=n;list();editor();};
   w.querySelector("#b_save").onclick=async()=>{const r=await api("banners",{act:"save",banners:B,use});if(r.error)return toast(r.error,false);
     S.init.banners=r.banners;S.banner=r.use;buildMenus();w.close();};
   list();editor();}

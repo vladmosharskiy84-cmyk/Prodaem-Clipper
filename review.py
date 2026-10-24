@@ -698,8 +698,28 @@ def run_job(job, cfg, enc, log=print):
     title = (job.get("title") or "").strip()
     show_title = bool(title) if own else bool(cfg.get("clip_titles", False))
     log(f"{streamer or clip.name}: монтаж ({dict((k, v) for k, v, _ in FORMATS)[job['fmt_key']]})")
-    res = m.montage(clip, fmt, streamer, title or p.get("title", clip.stem), out, cfg, enc,
-                    fixed_title=title or None, satis=sat, show_title=show_title, force=force)
+
+    def make(extra):
+        r = m.montage(clip, fmt, streamer, title or p.get("title", clip.stem), out, cfg, enc,
+                      fixed_title=title or None, satis=sat, show_title=show_title, force=dict(force, **extra))
+        return (out if r else None), r
+
+    ag = None
+    if cfg.get("agents", True) and not own:      # критик, судья и продюсер (нужен ключ Claude)
+        try:
+            import agents
+            words = m.transcribe(clip, cfg)
+            got, res, ag = agents.review(make, clip, words, cfg, log)
+            if ag and ag["decision"] == "publish":
+                p["final_title"] = (res or {}).get("final_title", "")
+                ag["plan"] = agents.producer(dict(p, streamer=streamer, file_out=str(out)), ag, words, cfg, log)
+        except ImportError:
+            got, res = make({})
+        except Exception as e:
+            log(f"  агенты не сработали: {e}")
+            got, res = (out, res) if "res" in locals() and res else make({})
+    else:
+        got, res = make({})
     if not res:
         log("  не получилось смонтировать")
         return None
@@ -709,11 +729,21 @@ def run_job(job, cfg, enc, log=print):
     p["source"] = "manual" if own else "review"
     p["potential"] = m.potential(p, res, None)
     hashtags = (f"#{streamer} " if streamer else "") + m.base_tags()
-    out.with_suffix(".txt").write_text((res["description"] or res["final_title"]) + f"\n\n{hashtags}\n", encoding="utf-8")
+    text = res["description"] or res["final_title"]
+    if ag:
+        p["agents"] = ag
+        if ag.get("plan"):
+            pl = ag["plan"]
+            hashtags = pl["hashtags"] or hashtags
+            text = pl["caption"] or text
+    out.with_suffix(".txt").write_text(text + f"\n\n{hashtags}\n", encoding="utf-8")
     p["tg_sent"] = m.tg_send(out, p, hashtags, kind)
     out.with_suffix(".json").write_text(json.dumps(p, ensure_ascii=False, indent=2), encoding="utf-8")
     log(f"  готово: {res['duration']} с, потенциал {p['potential']}/100"
         + (", отправлен в Telegram" if p["tg_sent"] else ""))
+    if ag:
+        job["agents"] = {"score": ag.get("score"), "decision": ag["decision"], "reason": ag.get("reason", ""),
+                         "plan": ag.get("plan")}
     return out
 
 
