@@ -41,7 +41,11 @@ def load_settings():
     s.setdefault("accounts", [])
     s.setdefault("goal", 100000)
     s.setdefault("rate", 1.0)          # $ за 1000 просмотров
-    s.setdefault("min_views", 3000)    # в выплату идут ролики от стольких просмотров
+    s.setdefault("min_views", 6000)    # в выплату идут ролики от стольких просмотров
+    if s.get("terms", 1) < 2:          # партнёрка подняла порог выплаты: 3000 → 6000
+        if s["min_views"] == 3000:
+            s["min_views"] = 6000
+        s["terms"] = 2
     s.setdefault("money_goal", 150)    # цель на неделю в $
     return s
 
@@ -79,15 +83,181 @@ def _update_ytdlp(say):
                    capture_output=True, creationflags=NOWIN, timeout=600)
 
 
+# ---------- сбор через браузер на компьютере ----------
+def _playwright():
+    try:
+        from playwright.sync_api import sync_playwright
+        return sync_playwright
+    except ImportError:
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "playwright"], capture_output=True,
+                       creationflags=NOWIN, timeout=900)
+        try:
+            from playwright.sync_api import sync_playwright
+            return sync_playwright
+        except ImportError:
+            return None
+
+
+def _item(e, handle):
+    st = e.get("stats") or {}
+    s2 = e.get("statsV2") or {}
+
+    def num(a, b):
+        try:
+            return int(st.get(a) if st.get(a) is not None else s2.get(b) or 0)
+        except Exception:
+            return 0
+    vid = str(e.get("id") or "")
+    return {"id": vid, "acc": handle, "url": f"https://www.tiktok.com/@{handle}/video/{vid}",
+            "desc": str(e.get("desc") or "").strip(), "views": num("playCount", "playCount"),
+            "likes": num("diggCount", "diggCount"), "comments": num("commentCount", "commentCount"),
+            "shares": num("shareCount", "shareCount"), "saves": num("collectCount", "collectCount"),
+            "dur": float((e.get("video") or {}).get("duration") or 0), "ts": int(e.get("createTime") or 0)}
+
+
+def fetch_account_browser(handle, say, limit=120):
+    """Открывает профиль в Microsoft Edge на этом компьютере, как обычный человек, и забирает данные роликов,
+    которые страница сама загружает (просмотры, лайки, комментарии, репосты, сохранения, длина, дата).
+    Если TikTok показал капчу, окно браузера появляется на экране: реши её, и сбор продолжится."""
+    sp = _playwright()
+    if not sp:
+        raise Stop("не получилось установить модуль браузера (playwright)")
+    prof = BASE / "cache" / "tiktok_browser"
+    prof.mkdir(parents=True, exist_ok=True)
+    items, seen = [], set()
+
+    def on_resp(resp):
+        if "/api/post/item_list" not in resp.url:
+            return
+        try:
+            data = resp.json()
+        except Exception:
+            return
+        for e in data.get("itemList") or []:
+            if e.get("id") and str(e["id"]) not in seen:
+                seen.add(str(e["id"]))
+                items.append(_item(e, handle))
+
+    for visible in (False, True):                # сначала окно за краем экрана, при капче — на экране
+        with sp() as p:
+            args = [] if visible else ["--window-position=-2400,0", "--window-size=1200,900"]
+            try:
+                ctx = p.chromium.launch_persistent_context(str(prof), channel="msedge", headless=False, args=args,
+                                                           viewport={"width": 1200, "height": 900}, locale="ru-RU")
+            except Exception:
+                ctx = p.chromium.launch_persistent_context(str(prof), channel="chrome", headless=False, args=args,
+                                                           viewport={"width": 1200, "height": 900}, locale="ru-RU")
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.on("response", on_resp)
+            try:
+                page.goto(f"https://www.tiktok.com/@{handle}", wait_until="domcontentloaded", timeout=60000)
+            except Exception as e:
+                ctx.close()
+                raise Stop(f"@{handle}: TikTok не открылся в браузере ({e})")
+            if visible:
+                say(f"@{handle}: в окне браузера TikTok просит проверку — реши её, жду до 2 минут…")
+            wait_until = time.time() + (120 if visible else 25)
+            last, still = -1, 0
+            while time.time() < wait_until and len(items) < limit:
+                page.wait_for_timeout(1500)
+                try:
+                    page.mouse.wheel(0, 2500)
+                except Exception:
+                    pass
+                if len(items) == last and items:
+                    still += 1
+                    if still >= 4:               # новые ролики больше не подгружаются: дошли до конца
+                        break
+                else:
+                    still = 0
+                last = len(items)
+            if not items:                        # запасной путь: просмотры прямо со страницы
+                try:
+                    dom = page.eval_on_selector_all('a[href*="/video/"]', """els => els.map(a => {
+                        const v = a.querySelector('[data-e2e="video-views"]'); return [a.href, v ? v.textContent : ""]; })""")
+                except Exception:
+                    dom = []
+                for href, v in dom:
+                    mt = re.search(r"/video/(\d+)", href)
+                    if mt and mt.group(1) not in seen:
+                        seen.add(mt.group(1))
+                        items.append({"id": mt.group(1), "acc": handle, "url": href, "desc": "", "views": _num(v),
+                                      "likes": 0, "comments": 0, "shares": 0, "saves": 0, "dur": 0.0, "ts": 0})
+            captcha = False
+            try:
+                captcha = bool(page.query_selector('[id*="captcha"], .captcha_verify_container, [class*="Captcha"]'))
+            except Exception:
+                pass
+            ctx.close()
+        if items or not captcha:
+            break
+    if not items:
+        raise Stop(f"@{handle}: браузер не увидел роликов (профиль пустой или TikTok не пустил)")
+    say(f"@{handle}: в браузере собрано роликов {len(items)}")
+    return items[:limit]
+
+
+def _num(t):
+    """«12,3K», «1.2M», «850» → число."""
+    t = str(t or "").strip().upper().replace(",", ".").replace(" ", "")
+    k = 1
+    if t.endswith(("K", "К")):
+        k, t = 1000, t[:-1]
+    elif t.endswith(("M", "М")):
+        k, t = 1_000_000, t[:-1]
+    try:
+        return int(float(t) * k)
+    except Exception:
+        return 0
+
+
+def resolve(item, say):
+    """Ник аккаунта из того, что вписали: @ник, ссылка на профиль или ссылка на любой ролик аккаунта.
+    По ссылке на ролик заодно запоминаем внутренний номер аккаунта (secUid): по нему профиль открывается,
+    даже когда TikTok не отдаёт страницу профиля напрямую."""
+    item = str(item).strip()
+    if not re.search(r"/video/|vm\.tiktok|vt\.tiktok|tiktok\.com/t/", item):
+        return clean_handle(item)
+    say("открываю ролик, чтобы узнать номер аккаунта…")
+    r = _ytdlp(["-J", "--skip-download", item], timeout=180)
+    if r.returncode != 0 or not r.stdout.strip():
+        _update_ytdlp(say)
+        r = _ytdlp(["-J", "--skip-download", item], timeout=180)
+    if r.returncode != 0 or not r.stdout.strip():
+        raise Stop("не открылся ролик " + item[:60] + ": " + ((r.stderr or "").strip().splitlines() or [""])[-1][:160])
+    e = json.loads(r.stdout)
+    handle = str(e.get("uploader") or "").lower() or clean_handle(e.get("webpage_url") or item)
+    sec = e.get("channel_id")
+    if handle and sec:
+        st = load_settings()
+        st.setdefault("secuid", {})[handle] = sec
+        save_settings(st)
+    return handle
+
+
 def fetch_account(handle, say, limit=120):
-    """Все ролики профиля: [{id, url, desc, views, likes, comments, shares, saves, dur, ts}]."""
-    url = f"https://www.tiktok.com/@{handle}"
-    err = ""
-    for attempt in range(2):
+    """Все ролики профиля: [{id, url, desc, views, likes, comments, shares, saves, dur, ts}].
+    TikTok часто не отдаёт список сразу (защита от частых запросов): пробуем по-разному с паузами,
+    а если так и не отдал, берём последний удачный список этого аккаунта из кэша."""
+    if sys.platform == "win32" and load_settings().get("browser", True):   # главный путь: браузер на этом компьютере
+        try:
+            out = fetch_account_browser(handle, say, limit)
+            _cache_save(handle, out)
+            return out
+        except Stop as e:
+            say(f"{e} — пробую другим способом…")
+        except Exception as e:
+            say(f"@{handle}: браузер не сработал ({e}) — пробую другим способом…")
+    sec = (load_settings().get("secuid") or {}).get(handle)
+    urls = ([f"tiktokuser:{sec}"] if sec else []) + [f"https://www.tiktok.com/@{handle}"]
+    err, r = "", None
+    for attempt in range(4):
+        url = urls[attempt % len(urls)]
         try:
             r = _ytdlp(["-J", "--flat-playlist", "--playlist-end", str(limit), url])
         except subprocess.TimeoutExpired:
             err = "TikTok не ответил за 10 минут"
+            r = None
             continue
         if r.returncode == 0 and r.stdout.strip():
             break
@@ -97,7 +267,22 @@ def fetch_account(handle, say, limit=120):
             err = ((r.stderr or "").strip().splitlines() or ["неизвестная ошибка"])[-1][:240]
         if attempt == 0:
             _update_ytdlp(say)
+        if attempt < 3:
+            wait = 15 * (attempt + 1)
+            say(f"@{handle}: TikTok не отдал список роликов, жду {wait} с и пробую ещё…")
+            time.sleep(wait)
     else:
+        cached = _cache_load(handle)
+        if cached:
+            say(f"@{handle}: TikTok не отдал свежий список, беру сохранённый от {cached['date']}")
+            return cached["videos"]
+        if "secondary user ID" in err and not sec:
+            raise Stop(f"@{handle}: TikTok не отдал профиль напрямую. Вставь вместо ника ссылку на любой ролик "
+                       f"этого аккаунта (Поделиться → Копировать ссылку): программа запомнит аккаунт и дальше "
+                       f"будет открывать его сама.")
+        if "JSON" in err or "secondary user ID" in err:
+            raise Stop(f"@{handle}: TikTok сейчас не отдаёт список роликов (защита от частых запросов). "
+                       f"Попробуй собрать анализ через 20–30 минут, остальные аккаунты посчитаны.")
         raise Stop(f"@{handle}: не получилось открыть профиль ({err}). Проверь ник и что профиль открытый.")
     j = json.loads(r.stdout)
     out = []
@@ -113,7 +298,25 @@ def fetch_account(handle, say, limit=120):
                     "ts": int(e.get("timestamp") or 0)})
     if not out:
         raise Stop(f"@{handle}: в профиле не видно роликов (профиль закрытый или пустой)")
+    _cache_save(handle, out)
     return out
+
+
+def _cache_save(handle, videos):
+    try:
+        d = DIR / "accounts_cache"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{handle}.json").write_text(json.dumps({"date": datetime.now().strftime("%d.%m %H:%M"), "videos": videos},
+                                                     ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _cache_load(handle):
+    try:
+        return json.loads((DIR / "accounts_cache" / f"{handle}.json").read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 # ---------- история просмотров ----------
@@ -358,12 +561,14 @@ REPORT_PROMPT = """Ты продюсер коротких видео в TikTok. 
 {data}
 
 Пояснения к полям: views просмотры, eng вовлечённость в % (лайки + комментарии x2 + репосты x3 + сохранения x2
-к просмотрам), stuck % роликов, застрявших на пробном показе, hook_loud насколько громче обычного первые 2 секунды
-(дБ), hook_motion насколько динамичнее обычного первые 2 секунды (1 = как весь ролик), dead_air сколько секунд
+к просмотрам), stuck % роликов, застрявших на пробном показе, hook_loud: на сколько дБ первые 2 секунды громче (+)
+или ТИШЕ (−) остального ролика (−6 значит начало заметно тише), hook_motion: во сколько раз первые 2 секунды
+динамичнее остального ролика (1 = как весь ролик, меньше 1 = спокойнее), dead_air сколько секунд
 тишины дольше секунды, peak_at на какой секунде самый громкий момент, cuts количество резких смен кадра,
 settings: стример, стиль и формат монтажа в программе.
 
-Найди, что реально отличает ролики-прострелы от провалов, на основе цифр, а не общих советов. Будь конкретным:
+Найди, что реально отличает ролики-прострелы от провалов, на основе цифр, а не общих советов.
+Если роликов мало (меньше 15) или они с одного аккаунта, прямо скажи, что выводы предварительные. Будь конкретным:
 называй ролики, секунды, проценты. Если данных мало, так и скажи. Советуй только честные способы: что брать
 в клипы, как начинать ролик, длину, подачу, текст, время, разделение аккаунтов по темам. Не советуй накрутку,
 уникализацию дублей, обход проверок TikTok.
@@ -386,9 +591,9 @@ def claude_report(data, cfg, say):
     import requests
     say("Claude разбирает статистику…")
     prompt = REPORT_PROMPT.format(goal=fmt_n(data.get("goal", 100000)), rate=data.get("rate", 1),
-                                  min_views=data.get("min_views", 3000), money_goal=data.get("money_goal", 150),
+                                  min_views=data.get("min_views", 6000), money_goal=data.get("money_goal", 150),
                                   data=json.dumps(data, ensure_ascii=False)[:60000])
-    models = [cfg.get("report_model", "claude-sonnet-5-5"), cfg.get("claude_model", "claude-haiku-4-5")]
+    models = [cfg.get("report_model", "claude-haiku-5-5"), cfg.get("claude_model", "claude-haiku-4-5")]
     last = ""
     for model in dict.fromkeys(models):
         try:
@@ -427,15 +632,61 @@ def short(v):
     return o
 
 
-def analyze(handles, goal, cfg, say=print, deep=True):
-    handles = [clean_handle(h) for h in handles if clean_handle(h)]
+def hot_streamers(videos, s, days=21):
+    """Стримеры, чьи ролики (из клиппера) набрали порог выплаты: их клипы берём в первую очередь."""
+    hot = {}
+    cut = time.time() - days * 86400
+    for v in videos:
+        st = (v.get("local") or {}).get("streamer")
+        if st and v["views"] >= s.get("min_views", 6000) and (not v["ts"] or v["ts"] >= cut):
+            hot[st] = max(hot.get(st, 0), v["views"])
+    return hot
+
+
+def best_slots(videos, n=3, min_videos=20, min_days=7):
+    """Часы выхода с лучшими просмотрами по факту. None, пока данных мало (меньше 20 роликов или недели)."""
+    vs = [v for v in videos if v["ts"] and v["ts"] >= time.time() - 30 * 86400]
+    if len(vs) < min_videos or (max(v["ts"] for v in vs) - min(v["ts"] for v in vs)) < min_days * 86400:
+        return None
+    by = {}
+    for v in vs:
+        h = datetime.fromtimestamp(v["ts"]).hour
+        if 10 <= h <= 23:
+            by.setdefault(h, []).append(v["views"])
+    ranked = sorted([(st.median(x), h) for h, x in by.items() if len(x) >= 2], reverse=True)
+    pick = []
+    for _, h in ranked:
+        if all(abs(h - x) >= 2 for x in pick):
+            pick.append(h)
+        if len(pick) == n:
+            break
+    if len(pick) < n:
+        return None
+    return [f"{h:02d}:00" for h in sorted(pick)]
+
+
+def analyze(handles, goal, cfg, say=print, deep=True, ai=True):
+    res_h, pre_err = [], []
+    for h in handles:
+        try:
+            x = resolve(h, say)
+        except Stop as e:
+            pre_err.append(str(e))
+            continue
+        if x and x not in res_h:
+            res_h.append(x)
+    handles = res_h
     if not handles:
+        if pre_err:
+            raise Stop(" ".join(pre_err))
         raise Stop("впиши хотя бы один ник аккаунта")
     s = load_settings()
     s.update(accounts=handles, goal=int(goal or 100000))
     save_settings(s)
-    videos, errors = [], []
+    videos, errors = [], list(pre_err)
     for k, h in enumerate(handles, 1):
+        if k > 1:
+            time.sleep(8)                        # пауза между аккаунтами: TikTok не любит частые запросы
         say(f"собираю ролики @{h} ({k} из {len(handles)})…")
         try:
             videos += fetch_account(h, say)
@@ -485,7 +736,16 @@ def analyze(handles, goal, cfg, say=print, deep=True):
             "by_duration": buckets(videos, dur_bucket, DUR_LABELS), "by_hour": buckets(videos, hour_bucket, HOUR_LABELS),
             "settings": settings_perf, "duplicates": [[short(v) for v in g] for g in dups[:10]],
             "top": [short(v) for v in top], "flops": [short(v) for v in flops]}
-    ai = claude_report(data, cfg, say)
+    ai = claude_report(data, cfg, say) if ai else None
+    # что залетает — того больше; время выхода — по факту
+    s = load_settings()
+    s["hot"] = hot_streamers(videos, s)
+    slots = best_slots(videos)
+    if slots and s.get("auto_slots", True):
+        if slots != s.get("slots"):
+            say("слоты выхода по просмотрам: " + ", ".join(slots))
+        s["slots"] = slots
+    save_settings(s)
     rep = {"time": time.time(), "handles": handles, "goal": s["goal"], "errors": errors,
            "accounts": accs, "best": {**short(best), "url": best["url"]},
            "growth_7d": g7, "growth_1d": g1 if has1 else None, "has_history": has_hist,
@@ -493,7 +753,8 @@ def analyze(handles, goal, cfg, say=print, deep=True):
            "duplicates": [[{**short(v), "url": v["url"]} for v in g] for g in dups],
            "top": [{**short(v), "url": v["url"]} for v in top],
            "flops": [{**short(v), "url": v["url"]} for v in flops],
-           "total_videos": len(videos), "ai": ai, "money": money(videos, s)}
+           "total_videos": len(videos), "ai": ai, "money": money(videos, s),
+           "hot": s.get("hot") or {}, "slots": s.get("slots")}
     DIR.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(json.dumps(rep, ensure_ascii=False, indent=1), encoding="utf-8")
     say("готово")
@@ -511,6 +772,72 @@ def money(videos, s):
                      sorted(near, key=lambda v: -v["views"])[:6]],
             "min_views": s["min_views"], "rate": s["rate"],
             "lost": sum(v["views"] for v in week if v["views"] < s["min_views"])}
+
+
+def report_text(rep):
+    """Ежедневный отчёт цифрами, без ИИ."""
+    s = load_settings()
+    lines = [f"📊 Отчёт за {datetime.now():%d.%m}"]
+    mo = rep.get("money") or {}
+    if mo:
+        lines.append(f"💰 За 7 дней: ${mo.get('usd', 0)} из ${mo.get('goal', 150)} · роликов {mo.get('min_views', 6000) // 1000}к+: "
+                     f"{mo.get('paid', 0)} из {mo.get('week', 0)}")
+    if rep.get("growth_1d") is not None:
+        lines.append(f"📈 За сутки: +{fmt_n(rep['growth_1d'])} просмотров")
+    lines.append(f"📈 За неделю: +{fmt_n(rep.get('growth_7d') or 0)} просмотров")
+    try:
+        import agents
+        today = datetime.now().strftime("%Y-%m-%d")
+        rows = [x for x in agents._load_schedule() if x.get("day") == today]
+        if rows:
+            done = sum(1 for x in rows if x.get("status") == "posted")
+            lines.append(f"📅 План сегодня: залито {done} из {len(rows)}")
+    except Exception:
+        pass
+    b = rep.get("best") or {}
+    if b:
+        lines.append(f"🏆 Лучший ролик: {fmt_n(b.get('views', 0))} · @{b.get('acc', '')}")
+    accs = rep.get("accounts") or {}
+    if accs:
+        lines.append("")
+        best = max(accs, key=lambda a: accs[a].get("median", 0))
+        for a, v in sorted(accs.items(), key=lambda kv: -kv[1].get("median", 0)):
+            lines.append(f"{'⭐' if a == best else '•'} @{a}: медиана {fmt_n(v.get('median', 0))}, "
+                         f"застряли {v.get('stuck', 0)}%, за неделю {v.get('last7', 0)} шт.")
+    near = (mo.get("near") or [])[:3]
+    if near:
+        lines.append("\nПочти в выплате: " + ", ".join(f"{fmt_n(x['views'])} @{x['acc']}" for x in near))
+    if s.get("hot"):
+        lines.append("🔥 Залетают: " + ", ".join(sorted(s["hot"], key=lambda k: -s["hot"][k])[:5]))
+    if s.get("slots"):
+        lines.append("🕒 Слоты по факту: " + ", ".join(s["slots"]))
+    if rep.get("errors"):
+        lines.append("\n⚠️ Не собрались: " + "; ".join(e.split(":")[0] for e in rep["errors"][:4]))
+    return "\n".join(lines)
+
+
+def weekly_text(rep):
+    """Недельный разбор: цифры отчёта плюс выводы Claude, что залетело, что нет и что менять."""
+    out = [report_text(rep).replace("📊 Отчёт за", "🗓 Разбор недели ·", 1)]
+    ai = rep.get("ai") or {}
+    if not ai:
+        out.append("\nРазбор от Claude не получился (нет ключа или он не ответил), здесь только цифры.")
+        return "\n".join(out)
+    if ai.get("main"):
+        out.append("\n🎯 Главное: " + ai["main"])
+    for title, key, n in (("✅ Что работает:", "works", 4), ("❌ Что убивает охват:", "kills", 4),
+                          ("🎬 Какие моменты брать:", "next_clips", 3), ("📋 План на неделю:", "plan", 4)):
+        items = [str(x) for x in (ai.get(key) or [])[:n]]
+        if items:
+            out.append("\n" + title)
+            out += [f"• {x}" for x in items]
+    accs = ai.get("accounts") or []
+    if accs:
+        out.append("\n👤 По аккаунтам:")
+        for a in accs[:6]:
+            fix = "; ".join(str(x) for x in (a.get("fix") or [])[:2])
+            out.append(f"• @{a.get('acc', '')}: {a.get('verdict', '')}" + (f" → {fix}" if fix else ""))
+    return "\n".join(out)
 
 
 def last_report():

@@ -21,6 +21,17 @@ DIR = BASE / "analytics"
 SCHEDULE = DIR / "schedule.json"
 NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 SLOTS = ["14:00", "18:00", "21:00"]
+
+
+def slots():
+    """Слоты выхода: по умолчанию 14/18/21, после недели аналитики — часы с лучшими просмотрами."""
+    try:
+        sl = json.loads((DIR / "settings.json").read_text(encoding="utf-8")).get("slots")
+        if sl and len(sl) >= 3:
+            return list(sl)[:3]
+    except Exception:
+        pass
+    return list(SLOTS)
 DEFAULT_ROLES = {
     "prodaem.cs": "тимфайты, рампаги, камбэки: самые эпичные драки",
     "prodaem.tw": "эмоции стримеров: крики, горение, реакции",
@@ -43,7 +54,7 @@ def _claude(content, cfg, max_tokens=900, vision=False):
     if not key:
         return None
     import requests
-    models = [cfg.get("agent_model", "claude-sonnet-5-5"), cfg.get("claude_model", "claude-haiku-4-5")]
+    models = [cfg.get("agent_model", "claude-haiku-5-5"), cfg.get("claude_model", "claude-haiku-4-5")]
     for model in dict.fromkeys(models):
         try:
             r = requests.post("https://api.anthropic.com/v1/messages",
@@ -79,11 +90,15 @@ def settings():
         s = json.loads((DIR / "settings.json").read_text(encoding="utf-8"))
     except Exception:
         s = {}
-    accs = s.get("accounts") or list(DEFAULT_ROLES)
-    roles = dict(DEFAULT_ROLES)
-    roles.update(s.get("roles") or {})
-    return {"accounts": accs, "roles": {a: roles.get(a, "дота-клипы") for a in accs},
-            "min_views": s.get("min_views", 3000), "rules": s.get("rules") or [],
+    accs = []                                    # только аккаунты, вписанные в «Аналитике» на этом компьютере
+    for a in s.get("accounts") or []:
+        mt = re.search(r"tiktok\.com/@([\w.\-]+)", str(a))
+        h = (mt.group(1) if mt else str(a)).strip().lstrip("@").strip("/").lower()
+        if h and h not in accs:
+            accs.append(h)
+    roles = {str(k).lstrip("@").lower(): v for k, v in (s.get("roles") or {}).items()}
+    return {"accounts": accs, "roles": {a: roles.get(a) or DEFAULT_ROLES.get(a, "дота-клипы") for a in accs},
+            "min_views": s.get("min_views", 6000) if s.get("terms", 1) >= 2 or s.get("min_views", 3000) != 3000 else 6000, "rules": s.get("rules") or [],
             "min_score": float(s.get("min_score", 7)), "fresh_hours": float(s.get("fresh_hours", 48))}
 
 
@@ -117,7 +132,7 @@ def transcript(words):
 # ---------- критик ----------
 CRITIC = """Ты строгий критик коротких роликов TikTok из клипов стримов по Dota 2. Ролик уже смонтирован:
 сверху камера стримера, снизу игра, субтитры по одному слову, в середине баннер партнёрки (его не трогаем).
-Звук не меняем. Задача ролика: пройти пробный показ TikTok (~700 просмотров) и набрать 3000+.
+Звук не меняем. Задача ролика: пройти пробный показ TikTok (~700 просмотров) и набрать 6000+ (в выплату идут только ролики от 6000).
 Для этого важнее всего первые 1-2 секунды, отсутствие пустых мест и резкий конец сразу после реакции.
 
 Что есть:
@@ -190,7 +205,7 @@ JUDGE = """Ты судья в команде клиппера Dota 2 для TikT
 - "publish": ролик готов, недочёты мелкие;
 - "fix": ролик станет заметно сильнее, если обрезать начало до сильного места или убрать хвост (только если критик
   дал start_at или end_at, и это не первый круг без пользы);
-- "reject": сам момент слабый, никакая обрезка не поможет пройти 3000.
+- "reject": сам момент слабый, никакая обрезка не поможет пройти 6000.
 
 Ответ ТОЛЬКО JSON: {{"decision": "publish|fix|reject", "reason": "одна короткая фраза по-русски",
 "start_at": число или null, "end_at": число или null}}"""
@@ -252,7 +267,7 @@ def _save_schedule(sc):
 def _target_day():
     """День, на который расписываем: сегодня, а если все слоты сегодня уже прошли, завтра."""
     now = datetime.now()
-    last = datetime.strptime(now.strftime("%Y-%m-%d") + " " + SLOTS[-1], "%Y-%m-%d %H:%M")
+    last = datetime.strptime(now.strftime("%Y-%m-%d") + " " + slots()[-1], "%Y-%m-%d %H:%M")
     return (now if now + timedelta(minutes=20) <= last else now + timedelta(days=1)).strftime("%Y-%m-%d")
 
 
@@ -265,7 +280,9 @@ def producer(p, report, words, cfg, log=print):
     самый слабый из ещё не вышедших, если он сильнее. Иначе ролик в запас: в Telegram он не уходит."""
     st = settings()
     accs = st["accounts"]
-    sc = _load_schedule()
+    if not accs:
+        return None
+    sc = [x for x in _load_schedule() if x.get("account") in accs]   # чужие аккаунты (из старых версий) убираем
     stats = ""
     try:
         rep = json.loads((DIR / "report.json").read_text(encoding="utf-8"))
@@ -289,13 +306,14 @@ def producer(p, report, words, cfg, log=print):
             "score": score, "streamer": p.get("streamer", "")}
     plan, bumped = None, None
     for acc in ranked:                                       # свободный слот на подходящем аккаунте
-        taken = {x["time"] for x in sc if x["account"] == acc and x["day"] == day}
-        free = [t for t in SLOTS if t not in taken and _future(day, t)]
+        taken = {x["time"] for x in sc if x["account"] == acc and x["day"] == day and x.get("status") != "dropped"}
+        free = [t for t in slots() if t not in taken and _future(day, t)]
         if free:
             plan = dict(base, account=acc, day=day, time=free[0])
             break
     if not plan:                                             # слотов нет: вытесняем самый слабый ещё не вышедший
-        cands = [x for x in sc if x["account"] in ranked and x["day"] == day and _future(day, x["time"])]
+        cands = [x for x in sc if x["account"] in ranked and x["day"] == day and _future(day, x["time"])
+                 and not x.get("status")]                 # уже залитые и отменённые не трогаем
         if cands:
             weak = min(cands, key=lambda x: float(x.get("score") or 0))
             if score > float(weak.get("score") or 0):
@@ -305,6 +323,13 @@ def producer(p, report, words, cfg, log=print):
     if not plan:
         log(f"  продюсер: в запас — на сегодня у подходящих аккаунтов уже по {PER_DAY} ролика сильнее")
         return {"reserve": True, "why": f"на {day[5:]} у подходящих аккаунтов уже по {PER_DAY} ролика сильнее"}
+    sc = [x for x in sc if not (x["account"] == plan["account"] and x["day"] == day and x["time"] == plan["time"]
+                                and x.get("status") == "dropped")]
+    try:
+        import tgbot
+        plan["pid"] = tgbot.pid_for(plan["clip"], plan["file"])
+    except Exception:
+        pass
     sc.append(plan)
     _save_schedule(sc)
     now = datetime.now()

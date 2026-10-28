@@ -125,14 +125,14 @@ class Out:
 
 
 # ---------- профили ----------
-LABELS = {"": "СНГ", "us": "US", "dota": "DOTA"}
+LABELS = {"": "СНГ", "us": "US", "dota": "DOTA", "murchik": "МУРЧИК"}
 ROLE = {"child": False, "parent": 0, "children": {}}     # главный процесс знает порты профилей
 
 
 def profile_dirs():
     """Папки данных профилей: C:\\clipper (СНГ) и рядом C:\\clipper_us, C:\\clipper_dota и другие."""
     out = [("", CODE)]
-    order = {"us": 0, "dota": 1}
+    order = {"us": 0, "dota": 1, "murchik": 2}
     for d in sorted(CODE.parent.glob(CODE.name + "_*"), key=lambda x: (order.get(x.name.rsplit("_", 1)[-1].lower(), 9), x.name)):
         if d.is_dir() and (d / "profile.txt").exists() and (d / "montage.json").exists():
             out.append((d.name[len(CODE.name) + 1:].lower(), d))
@@ -182,10 +182,12 @@ def init_data():
             "styles": [["random", "Случайный"]] + [[k, v] for k, v in m.STYLES.items()], "geo": list(m.GEO_STYLES),
             "fonts": m.available_fonts(), "font_lib": {k: list(v) for k, v in m.FONT_LIB.items()}, "style": A.st.get("style_key") or _style_key(A.st.get("style")),
             "anims": [[k, v] for k, v in m.SUB_ANIMS.items()], "anim": A.st.get("sub_anim") or "karaoke",
-            "zoom": A.st.get("zoom", True),
+            "zoom": A.st.get("zoom", True), "teaser": A.st.get("teaser", True),
             "font": A.st.get("font") if A.st.get("font") in m.available_fonts() else "",
             "banners": banners_short(), "banner_use": A.cfg.get("banner_use"),
-            "needs_setup": rv.needs_setup(), "game": gl or "КС", "video_broken": VB_FILE.exists()}
+            "needs_setup": rv.needs_setup() and A.cfg.get("mode") != "blogger", "game": gl or "КС",
+            "video_broken": VB_FILE.exists(), "mode": A.cfg.get("mode") or "clips",
+            "can_murchik": not ROLE["child"] and not any(k == "murchik" for k, _ in profile_dirs())}
 
 
 def _style_key(label):
@@ -210,7 +212,8 @@ def queue_data():
         out.append({"id": p["clip_id"], "streamer": "СВОЁ" if p.get("own") else p.get("streamer", ""),
                     "title": p.get("title", ""), "views": int(p.get("twitch_views") or 0),
                     "dur": int(p.get("duration") or 0), "own": bool(p.get("own")),
-                    "score": p.get("score"), "reason": p.get("reason", ""), "vod": p.get("source") == "vod"})
+                    "score": p.get("score"), "reason": p.get("reason", ""), "vod": p.get("source") == "vod",
+                    "hot": int(p.get("hot") or 0)})
     return {"items": out, "ver": A.queue_ver}
 
 
@@ -252,6 +255,7 @@ def snapshot(since):
         j["sec"] = int((j.get("end") or now) - j["start"]) if j.get("start") else 0
     return {"events": ev, "seq": A.seq, "jobs": jobs, "busy": bool(A.busy) or VOD["busy"] or TT["busy"], "wait": A.jobs.qsize(),
             "done": A.done, "failed": A.failed, "queue_ver": A.queue_ver, "finding": A.finding,
+            "render": bool(A.busy) or bool(A.jobs.qsize()) or VOD["busy"], "profile": rv.PROFILE or "",
             "upd": "ready" if A.upd["info"] else ("busy" if A.upd["busy"] else "")}
 
 
@@ -349,7 +353,8 @@ def montage_req(d):
            "title": d.get("title") or "", "captions": d.get("cap") or False, "sub_y": d.get("sub_y"),
            "style": d.get("style") or "classic", "font": d.get("font") or None,
            "banner": d.get("banner") if d.get("banner") in m.banner_list(A.cfg) else None,
-           "content": d.get("content"), "sub_anim": d.get("anim"), "zoom": d.get("zoom", True)}
+           "content": d.get("content"), "sub_anim": d.get("anim"), "zoom": d.get("zoom", True),
+           "teaser": d.get("teaser", True)}
     jid = secrets.token_hex(4)
     style_name = dict(m.STYLES).get(job["style"], "Случайный")
     with A.lock:
@@ -383,35 +388,284 @@ def render_lock():
         return None
 
 
+# ---------- монтаж блогера (стиль «Вальдемар») ----------
+BLOG_CFG = BASE / "blogger.json"
+
+
+def run_blog(job, j):
+    import blogger
+
+    def say(t):
+        A.log("блогер: " + t)
+        with A.lock:
+            if j:
+                j["stage"] = t[:140]
+    out, meta = blogger.make(job["src"], A.cfg, A.enc, job["opts"], say=say)
+    sent = False
+    if job["opts"].get("tg", True):
+        say("отправляю в Telegram…")
+        cap = "🎬 Монтаж блогера\n" + (f"Крючок: {meta['hook']}\n" if meta.get("hook") else "") + \
+              (f"Музыка: {Path(str(meta['music'])).name}\n" if meta.get("music") else "") + f"{meta['duration']:.0f} с"
+        sent = blogger.tg_send(out, cap)
+    Path(out).with_suffix(".json").write_text(json.dumps(dict(meta, tg_sent=sent), ensure_ascii=False, indent=1),
+                                              encoding="utf-8")
+    return out
+
+
+def blog_req(d):
+    import blogger
+    act = d.get("act")
+    try:
+        saved = json.loads(BLOG_CFG.read_text(encoding="utf-8"))
+    except Exception:
+        saved = {}
+    if act == "init":
+        hf = blogger.hook_font(download=False)
+        threading.Thread(target=lambda: (blogger.hook_font(), blogger.sub_font()), daemon=True).start()
+        return {"music": blogger.music_list(), "sounds": blogger.sound_list(), "saved": saved, "hook_font": hf[0],
+                "corsiva": hf[0].lower().startswith("monotype"), "sub_font": blogger.sub_font(download=False)[0],
+                "hook_fonts": blogger.user_hook_fonts()}
+    if act == "add_font":
+        name, cyr = blogger.add_hook_font(ask_files("font"))
+        return {"fonts": blogger.user_hook_fonts(), "added": name, "cyr": cyr}
+    if act == "add_sound":
+        added = blogger.add_sound(ask_files("audio"))
+        return {"sounds": blogger.sound_list(), "added": added}
+    if act == "test_sound":                      # послушать щелчок: открываем файл в плеере Windows
+        f = blogger.click_file(d.get("name"))
+        if f:
+            open_path(f)
+        return {"ok": True}
+    if act == "pick":
+        return {"files": ask_files("video")}
+    if act == "add_music":
+        added = blogger.add_music(ask_files("audio"))
+        return {"music": blogger.music_list(), "added": added}
+    if act == "open_music":
+        blogger.MUSIC_DIR.mkdir(parents=True, exist_ok=True)
+        open_path(blogger.MUSIC_DIR)
+        return {"ok": True}
+    if act == "start":
+        files = [f for f in d.get("files") or [] if Path(f).exists()]
+        if not files:
+            return {"error": "Выбери видео"}
+        opts = {k: d[k] for k in ("music", "music_db", "hook_words", "hook_font", "hook_text", "hook_caps", "hook_case", "hook_palette", "cut_fillers", "click", "click_vol", "bw", "cut_pauses", "tg",
+                                  "max_gap") if k in d}
+        BLOG_CFG.write_text(json.dumps(opts, ensure_ascii=False), encoding="utf-8")
+        for f in files:
+            jid = secrets.token_hex(4)
+            name = Path(f).stem[:40]
+            with A.lock:
+                A.job_list.append({"id": jid, "streamer": "Блогер", "title": name, "fmt": name, "style": "Вальдемар",
+                                   "state": "wait", "stage": "ждёт своей очереди", "start": None, "end": None,
+                                   "out": None, "blog": True})
+                A.job_list = A.job_list[-30:]
+            A.jobs.put({"blog": True, "jid": jid, "src": f, "opts": dict(opts),
+                        "clip": {"clip_id": "blog_" + jid, "title": name, "streamer": "блогер"}, "streamer": "блогер"})
+        A.refresh()
+        return {"ok": True, "n": len(files)}
+    if act == "make_murchik":
+        return make_murchik()
+    return {"error": "нет такой команды"}
+
+
+def make_murchik():
+    """Отдельный профиль «Мурчик»: только монтаж блогера в одном стиле. Ключи и Telegram — как в главном."""
+    if ROLE["child"]:
+        return {"error": "профиль создаётся из главного окна (СНГ)"}
+    dst = CODE.parent / f"{CODE.name}_murchik"
+    dst.mkdir(parents=True, exist_ok=True)
+    for name in ("claude_key.txt", "telegram_token.txt", "telegram_chat.txt", "telegram_topics.json", "config.json"):
+        if (CODE / name).exists() and not (dst / name).exists():
+            shutil.copy2(CODE / name, dst / name)
+    mj = json.loads((CODE / "montage.json").read_text(encoding="utf-8"))
+    mj["mode"] = "blogger"
+    if not (dst / "montage.json").exists():
+        (dst / "montage.json").write_text(json.dumps(mj, ensure_ascii=False, indent=2), encoding="utf-8")
+    (dst / "profile.txt").write_text("МУРЧИК", encoding="utf-8")
+    if "murchik" not in ROLE["children"]:        # запускаем профиль сразу, без перезапуска программы
+        port = free_port(SERVER["port"] + 9)
+        ROLE["children"]["murchik"] = port
+        env = dict(os.environ, CLIPPER_DATA=str(dst), PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+        subprocess.Popen([sys.executable, str(CODE / "review.py"), "--data", str(dst), "--port", str(port),
+                          "--no-window", "--token", TOKEN, "--parent", str(SERVER["port"])],
+                         cwd=str(dst), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         stdin=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        t0 = time.time()
+        while time.time() - t0 < 20 and not _alive(port):
+            time.sleep(0.3)
+    port = ROLE["children"]["murchik"]
+    A.log("создан профиль «Мурчик»: монтаж блогера")
+    return {"ok": True, "url": f"http://127.0.0.1:{port}/?k={TOKEN}"}
+
+
+UPLOADS = BASE / "uploads"
+
+
+def save_upload(handler, name, size):
+    """Видео, перетащенное в окно мышкой: сохраняем в папку uploads профиля и возвращаем путь."""
+    UPLOADS.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r'[\\/:*?"<>|]+', "_", Path(name).name)[:120] or "video.mp4"
+    out = UPLOADS / safe
+    i = 1
+    while out.exists():
+        out = UPLOADS / f"{Path(safe).stem}_{i}{Path(safe).suffix}"
+        i += 1
+    left = size
+    with open(out, "wb") as f:
+        while left > 0:
+            chunk = handler.rfile.read(min(1 << 20, left))
+            if not chunk:
+                break
+            f.write(chunk)
+            left -= len(chunk)
+    if left > 0:
+        out.unlink(missing_ok=True)
+        return None
+    return str(out)
+
+
+# ---------- стоп монтажа ----------
+class Cancelled(BaseException):
+    """Монтаж остановлен кнопкой. BaseException, чтобы его не проглотили обработчики ошибок внутри монтажа."""
+
+
+CANCEL = {"jid": None, "flag": False, "procs": set(), "gone": set()}
+_Popen = subprocess.Popen
+
+
+class _TrackPopen(_Popen):
+    """ffmpeg и прочие процессы монтажа запоминаются, чтобы «Стоп» мог их сразу прервать."""
+    def __init__(self, *a, **k):
+        mine = threading.current_thread().name == "montage-worker"
+        if mine and CANCEL["flag"]:
+            self._child_created = False
+            raise Cancelled()
+        super().__init__(*a, **k)
+        if mine:
+            CANCEL["procs"].add(self)
+
+
+subprocess.Popen = _TrackPopen
+
+
+def _clip_back(job):
+    """Остановленный клип возвращается в очередь, как будто его не трогали."""
+    with A.lock:
+        A.st["clips"].pop(job["clip"]["clip_id"], None)
+        rv.save_state(A.st)
+
+
+def cancel_req(d):
+    """Убрать из пачки: один ролик (id) или всё сразу (all). Ждущие убираются сразу, текущий прерывается."""
+    ids = None if d.get("all") else {d.get("id")}
+    removed, stopping = 0, False
+    with A.jobs.mutex:                           # ждущие: вынимаем из очереди
+        keep = []
+        for job in A.jobs.queue:
+            if ids is None or job["jid"] in ids:
+                CANCEL["gone"].add(job["jid"])
+                removed += 1
+                _clip_back(job)
+            else:
+                keep.append(job)
+        A.jobs.queue.clear()
+        A.jobs.queue.extend(keep)
+    with A.lock:
+        for j in A.job_list:
+            if j["id"] in CANCEL["gone"] and j["state"] == "wait":
+                j.update(state="cancel", stage="убран из пачки, клип вернулся в очередь", end=time.time())
+    if CANCEL["jid"] and (ids is None or CANCEL["jid"] in ids):   # текущий: прерываем ffmpeg
+        CANCEL["flag"] = True
+        stopping = True
+        for pr in list(CANCEL["procs"]):
+            try:
+                if pr.poll() is None:
+                    pr.kill()
+            except Exception:
+                pass
+        with A.lock:
+            for j in A.job_list:
+                if j["id"] == CANCEL["jid"]:
+                    j["stage"] = "останавливаю…"
+    if removed or stopping:
+        A.log(f"монтаж: убрано из пачки {removed}" + (", текущий ролик останавливается" if stopping else ""))
+    A.refresh()
+    return {"ok": True, "removed": removed, "stopping": stopping}
+
+
 def worker():
     while True:
         job = A.jobs.get()
         with A.lock:
             j = next((x for x in A.job_list if x["id"] == job["jid"]), None)
+        if job["jid"] in CANCEL["gone"]:
+            continue
+        CANCEL.update(jid=job["jid"], flag=False, procs=set())
         lock = render_lock()
         while lock is None:                      # монтируется ролик другого профиля
             if j:
                 j["stage"] = "ждёт: монтируется ролик другого профиля"
+            if CANCEL["flag"]:
+                break
             time.sleep(2)
             lock = render_lock()
+        if CANCEL["flag"]:
+            if lock:
+                lock.close()
+            CANCEL.update(jid=None, flag=False, procs=set())
+            _clip_back(job)
+            with A.lock:
+                if j:
+                    j.update(state="cancel", stage="остановлен, клип вернулся в очередь", end=time.time())
+            A.refresh()
+            continue
         with A.lock:
             if j:
                 j.update(state="run", stage="начинаю", start=time.time())
         A.busy = job["clip"].get("title", "")[:28] or "клип"
         out, err = None, None
+        t_start = time.time()
         try:
             if not m.ensure_space(2.0, A.log, skip_vods=VOD["busy"]):
                 raise RuntimeError(f"нет места на диске (свободно {m.free_gb():.1f} ГБ): удали лишнее и запусти снова")
             if A.enc is None:
                 A.enc = m.pick_encoder(A.cfg)
-            out = rv.run_job(job, A.cfg, A.enc, log=A.log)
+            out = run_blog(job, j) if job.get("blog") else rv.run_job(job, A.cfg, A.enc, log=A.log)
+            if not out and CANCEL["flag"]:        # ffmpeg прерван, монтаж вернул пусто: это стоп, а не ошибка
+                err = "cancel"
+        except Cancelled:
+            out, err = None, "cancel"
         except BaseException as e:               # любая ошибка: клип помечается, очередь монтажа идёт дальше
-            err = str(e) or e.__class__.__name__
-            A.log(f"  ошибка: {err}")
+            if CANCEL["flag"]:
+                out, err = None, "cancel"
+            else:
+                err = str(e) or e.__class__.__name__
+                A.log(f"  ошибка: {err}")
+        if err == "cancel":                      # остановлено кнопкой: недоделанный файл убираем, клип в очередь
+            CANCEL.update(jid=None, flag=False, procs=set())
+            try:
+                for f in (BASE / "clips" / "ready").rglob("*.mp4"):
+                    if f.stat().st_mtime >= t_start - 1 and not f.with_suffix(".json").exists():
+                        f.unlink()
+            except Exception:
+                pass
+            _clip_back(job)
+            with A.lock:
+                if j:
+                    j.update(state="cancel", stage="остановлен, клип вернулся в очередь", end=time.time())
+            A.busy = None
+            lock.close()
+            A.log("  монтаж остановлен")
+            A.toast("Монтаж остановлен, клип вернулся в очередь")
+            A.refresh()
+            continue
+        CANCEL.update(jid=None, flag=False, procs=set())
         ok = bool(out)
         dropped = not ok and (job.get("agents") or {}).get("decision") == "reject"   # судья: неактуально
         with A.lock:
-            A.st["clips"][job["clip"]["clip_id"]] = "done" if ok else ("skipped" if dropped else "retry")
+            if not job.get("blog"):
+                A.st["clips"][job["clip"]["clip_id"]] = "done" if ok else ("skipped" if dropped else "retry")
             rv.save_state(A.st)
             if ok:
                 A.done += 1
@@ -428,6 +682,7 @@ def worker():
                 if ag and (ok or dropped):       # что решили критик, судья и продюсер
                     pl = ag.get("plan") or {}
                     stage = (f"✓ {ag.get('score', '?')}/10 → @{pl['account']} {pl.get('when', '')}"
+                             + (" · в Telegram" if sent else " · в Telegram не ушёл, см. журнал")
                              if ag.get("decision") == "publish" and pl.get("account")
                              else f"◌ в запасе: {ag.get('reason', '')}" if ag.get("decision") == "reserve"
                              else f"✕ в брак: {ag.get('reason', '')}")[:140]
@@ -566,6 +821,8 @@ def cleanup_loop():
 def auto_find_loop():
     time.sleep(3)
     while not A.quit.is_set():
+        if A.cfg.get("mode") == "blogger":       # профиль монтажа блогера: клипы с Twitch не ищем
+            return
         if not rv.needs_setup():
             find_clips()
         A.quit.wait(int(A.cfg.get("interval_min", 120)) * 60)
@@ -602,7 +859,14 @@ def dialog_loop():
             root = tk.Tk()
             root.withdraw()
             root.attributes("-topmost", True)
-            if kind == "banner":
+            if kind == "font":
+                box["files"] = list(filedialog.askopenfilenames(
+                    parent=root, title="Выбери файл шрифта", filetypes=[("Шрифт", "*.ttf *.otf"), ("Все файлы", "*.*")]))
+            elif kind == "audio":
+                box["files"] = list(filedialog.askopenfilenames(
+                    parent=root, title="Выбери музыку",
+                    filetypes=[("Музыка", "*.mp3 *.wav *.m4a *.aac *.ogg *.flac"), ("Все файлы", "*.*")]))
+            elif kind == "banner":
                 f = filedialog.askopenfilename(parent=root, title="Файл баннера",
                                                filetypes=[("Видео", "*.mov *.mp4 *.webm *.mkv"), ("Все файлы", "*.*")])
                 box["files"] = [f] if f else []
@@ -635,6 +899,19 @@ def parent_alive():
         return _get(ROLE["parent"], "/ping", 1.5) == b"prodaem-clipper"
     except Exception:
         return False
+
+
+def children_rendering():
+    """Какие профили сейчас монтируют или режут стрим (поиск клипов и аналитика обновлению не мешают)."""
+    out = []
+    for key, port in ROLE["children"].items():
+        try:
+            d = json.loads(_get(port, "/poll?since=999999999&quiet=1"))
+            if d.get("render", d.get("busy") or d.get("wait")):
+                out.append(str(key).upper())
+        except Exception:
+            pass
+    return out
 
 
 def children_busy():
@@ -846,6 +1123,15 @@ def tt_req(d):
             pass
         return {"settings": accounts.load_settings(), "report": accounts.last_report(), "plan": plan, "roles": roles,
                 "busy": TT["busy"], "stage": TT["stage"], "error": TT["error"]}
+    if act == "report_now":                      # прислать отчёт за день прямо сейчас (не чаще раза в сутки)
+        return manual_report("report")
+    if act == "reset_plan":                      # начать день с чистого листа: план продюсера пустой
+        try:
+            import agents
+            agents.SCHEDULE.unlink(missing_ok=True)
+        except Exception as e:
+            return {"error": str(e)}
+        return {"ok": True}
     if act == "roles":                           # роли аккаунтов для продюсера: «ник — роль» по строке
         st = accounts.load_settings()
         roles = {}
@@ -937,6 +1223,345 @@ def leaders_req(d):
         return {"ok": True}
     return {}
 
+
+
+
+# ---------- редактор готового ролика ----------
+MEDIA = {}                                       # номер → файл, который окно может проиграть
+
+
+def media_url(path):
+    mid = secrets.token_hex(6)
+    MEDIA[mid] = str(path)
+    if len(MEDIA) > 200:
+        for k in list(MEDIA)[:100]:
+            MEDIA.pop(k, None)
+    return f"/media?id={mid}&k={TOKEN}"
+
+
+def editor_req(d):
+    act = d.get("act")
+    if act == "list":                            # последние готовые ролики, которые можно поправить
+        rows = []
+        for js in sorted((BASE / "clips" / "ready").glob("*/*.json"), key=lambda f: f.stat().st_mtime, reverse=True)[:60]:
+            mp4 = js.with_suffix(".mp4")
+            if not mp4.exists():
+                continue
+            try:
+                p = json.loads(js.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            ag = p.get("agents") or {}
+            pl = ag.get("plan") or {}
+            rows.append({"out": str(mp4), "streamer": p.get("streamer", ""), "title": p.get("final_title", ""),
+                         "when": time.strftime("%d.%m %H:%M", time.localtime(mp4.stat().st_mtime)), "dur": p.get("duration"),
+                         "score": ag.get("score"), "plan": f"@{pl['account']} {pl.get('when', '')}" if pl.get("account") else "",
+                         "editable": bool(p.get("job")), "edited": bool(p.get("edited"))})
+        return {"rows": rows}
+    if act == "open":
+        out = Path(d.get("out") or "")
+        js = out.with_suffix(".json")
+        if not js.exists():
+            return {"error": "у этого ролика нет данных для редактора (смонтирован старой версией программы)"}
+        p = json.loads(js.read_text(encoding="utf-8"))
+        src = Path(p.get("file", ""))
+        src = src if src.is_absolute() else BASE / src
+        if not src.exists():
+            return {"error": "исходный клип уже удалён очисткой: переделать этот ролик нельзя"}
+        if not p.get("job"):
+            return {"error": "ролик смонтирован старой версией программы: открой его в редакторе после следующего монтажа"}
+        ed = p.get("edit") or {}
+        words = ed.get("words")
+        if words is None:
+            words = m.ai_fix_words(m.merge_hyphens(m.transcribe(src, A.cfg)), src, A.cfg)
+        info = m.probe(src)
+        play = safe_copy("ed_" + src.stem, str(src)) if d.get("safe") else src   # на компьютерах, где видео чёрное
+        return {"out": str(out), "src": media_url(play), "ready": media_url(out), "dur": info["dur"],
+                "w": info["w"], "h": info["h"], "words": words, "edit": ed, "title": p.get("final_title", ""),
+                "streamer": p.get("streamer", ""), "banner_at_out": p.get("banner_at"), "score": (p.get("agents") or {}).get("score")}
+    if act == "save":
+        out = Path(d.get("out") or "")
+        p = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+        job = dict(p["job"])
+        clip = dict(p)
+        clip["file"] = p.get("file")
+        src = Path(clip["file"])
+        clip["file"] = str(src if src.is_absolute() else BASE / src)
+        job["clip"] = clip
+        e = d.get("edit") or {}
+        dur = m.probe(clip["file"])["dur"]
+        edit = {"start_at": max(0.0, float(e.get("start_at") or 0)) or None,
+                "end_at": (min(dur, float(e["end_at"])) if e.get("end_at") and float(e["end_at"]) < dur - 0.05 else None),
+                "cuts": [[float(a), float(b)] for a, b in (e.get("cuts") or []) if float(b) - float(a) > 0.1],
+                "banner_at": float(e["banner_at"]) if e.get("banner_at") is not None else None,
+                "teaser": bool(e.get("teaser", True)),
+                "words": [{"s": float(w["s"]), "e": float(w["e"]), "t": str(w["t"])} for w in (e.get("words") or [])]
+                if e.get("words") is not None else None}
+        job["edit"] = edit
+        jid = secrets.token_hex(4)
+        job["jid"] = jid
+        with A.lock:
+            A.job_list.append({"id": jid, "streamer": job.get("streamer") or p.get("streamer", ""), "title": p.get("final_title", ""),
+                               "fmt": "правка", "style": dict(m.STYLES).get(job.get("style"), ""), "state": "wait",
+                               "stage": "ждёт своей очереди", "start": None, "end": None, "out": None})
+            A.job_list = A.job_list[-30:]
+        A.jobs.put(job)
+        A.refresh()
+        return {"ok": True}
+    return {}
+
+
+def daily_report(weekly=False, fetch=True):
+    """Отчёт в группу «Отчёты». fetch=True (только по кнопке или команде): заново собрать цифры с TikTok,
+    это открывает браузер. Сам по себе (22:00, понедельник) отчёт берёт цифры последней аналитики и TikTok не трогает."""
+    import accounts
+    st = accounts.load_settings()
+    if not st.get("accounts"):
+        return {"error": "в аналитике не вписаны аккаунты"}
+    if TT["busy"]:
+        return {"error": "аналитика уже собирается"}
+    if not fetch:
+        rep = accounts.last_report()
+        if not rep:
+            m.tg_message("📊 Отчёт: свежих цифр нет. Открой «Аналитика TikTok» и нажми «Собрать анализ», "
+                         "тогда отчёты будут с цифрами.", "report")
+            return {"error": "нет данных аналитики"}
+        text = (accounts.weekly_text(rep) if weekly else accounts.report_text(rep)) + \
+            f"\n\n(цифры TikTok из аналитики от {time.strftime('%d.%m %H:%M', time.localtime(rep.get('time', 0)))}; " \
+            "свежие — кнопка «Собрать анализ»)"
+        ok = m.tg_message(text, "report")
+        A.log(("разбор недели " if weekly else "отчёт за день ") + ("отправлен в Telegram" if ok else "не ушёл в Telegram"))
+        return {"ok": True, "sent": ok}
+    TT.update(busy=True, stage="отчёт: собираю цифры", error="")
+    try:
+        rep = accounts.analyze(st["accounts"], st.get("goal", 100000), A.cfg,
+                               lambda t: TT.update(stage=str(t)[:160]), deep=False, ai=weekly)
+        text = accounts.weekly_text(rep) if weekly else accounts.report_text(rep)
+        ok = m.tg_message(text, "report")
+        A.log(("разбор недели " if weekly else "отчёт за день ") + ("отправлен в Telegram" if ok else "собран, но в Telegram не ушёл"))
+        return {"ok": True, "text": text, "sent": ok}
+    except Exception as e:
+        TT["error"] = str(e)[:300]
+        return {"error": str(e)[:300]}
+    finally:
+        TT["busy"] = False
+        TT["ver"] += 1
+
+
+def daily_loop():
+    """Проверяет раз в минуту, не пора ли прислать отчёт (каждый день) или разбор недели (по понедельникам)."""
+    import accounts
+    mark = BASE / "analytics" / "report_sent.txt"
+    while not A.quit.wait(60):
+        try:
+            st = accounts.load_settings()
+            if not st.get("report", True) or not st.get("accounts"):
+                continue
+            hour = int(st.get("report_hour", 22))
+            today = time.strftime("%Y-%m-%d")
+            sent = mark.read_text().strip() if mark.exists() else ""
+            if time.localtime().tm_hour >= hour and sent != today and not (A.busy or VOD["busy"]):
+                mark.parent.mkdir(parents=True, exist_ok=True)
+                mark.write_text(today)
+                daily_report(weekly=time.localtime().tm_wday == int(st.get("weekly_day", 0)) and st.get("weekly", True),
+                             fetch=False)       # сам по себе TikTok не открываем: только цифры последней аналитики
+        except Exception as e:
+            A.log(f"отчёт не получился: {e}")
+
+
+MANUAL = BASE / "analytics" / "report_manual.json"
+
+
+def manual_report(kind):
+    """Отчёт или разбор недели по кнопке или команде: не чаще раза в 24 часа (каждый вид отдельно).
+    Отчёт в 22:00 и разбор по понедельникам приходят сами, это ограничение их не трогает."""
+    import accounts
+    if not accounts.load_settings().get("accounts"):
+        return {"error": "no_accounts"}
+    if TT["busy"]:
+        return {"error": "аналитика уже собирается"}
+    try:
+        last = json.loads(MANUAL.read_text(encoding="utf-8"))
+    except Exception:
+        last = {}
+    t = float(last.get(kind, 0))
+    if time.time() - t < 24 * 3600:
+        nxt = time.strftime("%d.%m в %H:%M", time.localtime(t + 24 * 3600))
+        what = "Разбор недели" if kind == "week" else "Отчёт"
+        return {"error": f"{what} уже присылался {time.strftime('%d.%m в %H:%M', time.localtime(t))}. "
+                         f"Следующий по кнопке можно {nxt} (не чаще раза в сутки)", "limit": True}
+    last[kind] = time.time()
+    MANUAL.parent.mkdir(parents=True, exist_ok=True)
+    MANUAL.write_text(json.dumps(last), encoding="utf-8")
+    threading.Thread(target=daily_report, kwargs={"weekly": kind == "week"}, daemon=True).start()
+    return {"ok": True}
+
+
+# ---------- очередь стримов (старые видео Стрея и т.п.) ----------
+VODQ = BASE / "analytics" / "vod_queue.json"
+VODQ_LOCK = threading.Lock()
+
+
+def vodq_load():
+    try:
+        return json.loads(VODQ.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def vodq_save(q):
+    VODQ.parent.mkdir(parents=True, exist_ok=True)
+    VODQ.write_text(json.dumps(q[-300:], ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def _vod_key(u):
+    u = u.strip()
+    mt = re.search(r"(?:v=|youtu\.be/|shorts/|live/)([\w-]{11})", u)
+    if mt:
+        return "yt:" + mt.group(1)
+    mt = re.search(r"twitch\.tv/videos/(\d+)", u)
+    return ("tw:" + mt.group(1)) if mt else u.split("&")[0]
+
+
+def vodq_add(urls, n=None):
+    """Добавляет ссылки в очередь нарезки. Повторы (уже нарезанные или стоящие в очереди) пропускает."""
+    added, dup = [], 0
+    with VODQ_LOCK:
+        q = vodq_load()
+        have = {_vod_key(x["url"]) for x in q}
+        for u in urls:
+            k = _vod_key(u)
+            if k in have:
+                dup += 1
+                continue
+            have.add(k)
+            q.append({"url": u, "added": time.strftime("%Y-%m-%d %H:%M"), "status": "wait",
+                      "n": int(n or A.cfg.get("vod_queue_n", 10))})
+            added.append(u)
+        vodq_save(q)
+    wait = sum(1 for x in vodq_load() if x["status"] == "wait")
+    if added:
+        A.log(f"в очередь нарезки добавлено видео: {len(added)}, всего ждут {wait}")
+    return {"added": len(added), "dup": dup, "wait": wait}
+
+
+def vodq_loop():
+    """Когда программа простаивает (нет монтажа, поиска и нарезки), берёт следующее видео из очереди и нарезает."""
+    time.sleep(90)
+    while not A.quit.wait(60):
+        try:
+            if A.busy or A.jobs.qsize() or VOD["busy"] or A.finding or TT["busy"] or LD["busy"]:
+                continue
+            with VODQ_LOCK:
+                q = vodq_load()
+                nxt = next((x for x in q if x["status"] == "wait"), None)
+                if not nxt:
+                    continue
+                nxt["status"] = "run"
+                nxt["started"] = time.strftime("%Y-%m-%d %H:%M")
+                vodq_save(q)
+            A.log("очередь нарезки: беру " + nxt["url"][:80])
+            r = vod_req({"src": nxt["url"], "n": nxt.get("n", 10)})
+            while VOD["busy"] and not A.quit.is_set():
+                time.sleep(5)
+            with VODQ_LOCK:
+                q = vodq_load()
+                for x in q:
+                    if x["url"] == nxt["url"] and x["status"] == "run":
+                        x["status"] = "error" if r.get("error") else "done"
+                        x["finished"] = time.strftime("%Y-%m-%d %H:%M")
+                vodq_save(q)
+        except Exception as e:
+            A.log(f"очередь нарезки: {e}")
+
+
+# ---------- управление с телефона (через Telegram-бота) ----------
+LIVE_DIR = CODE / "cache" / "live"
+
+
+def live_register():
+    """Запись «этот профиль запущен, вот его порт»: по ней бот находит все профили на компьютере."""
+    try:
+        LIVE_DIR.mkdir(parents=True, exist_ok=True)
+        key = my_key()
+        (LIVE_DIR / f"{key or 'main'}.json").write_text(json.dumps(
+            {"key": key, "label": profile_label(key, BASE), "port": SERVER["port"], "token": TOKEN,
+             "pid": os.getpid(), "base": str(BASE), "t": time.time()}), encoding="utf-8")
+    except Exception as e:
+        A.log(f"запись профиля для бота не сохранилась: {e}")
+
+
+def remote_req(d):
+    act = d.get("act")
+    if act == "status":
+        job = None
+        with A.lock:
+            for j in A.job_list:
+                if j.get("state") == "run":
+                    job = f"{j.get('streamer', '')}: {j.get('stage', '')}"[:120]
+            n_items = len(A.items)
+        q = vodq_load()
+        return {"label": profile_label(my_key(), BASE), "job": job, "jobs": A.jobs.qsize(), "queue": n_items,
+                "finding": A.finding, "vod": VOD["busy"], "done": A.done, "failed": A.failed,
+                "vod_wait": sum(1 for x in q if x["status"] == "wait"), "free_gb": round(m.free_gb(), 1),
+                "up": round(time.time() - START_T)}
+    if act == "find":
+        return find_clips()
+    if act == "stray_add":
+        return vodq_add(d.get("urls") or [], d.get("n"))
+    if act == "vod_queue":
+        return {"items": vodq_load()[-15:]}
+    if act in ("report", "week"):
+        return manual_report(act)
+    return {"error": "нет такой команды"}
+
+
+# ---------- «я снова работаю» ----------
+START_T = time.time()
+BEAT = CODE / "cache" / "heartbeat.json"
+
+
+def _dur(sec):
+    h, mm = int(sec // 3600), int(sec % 3600 // 60)
+    return (f"{h} ч {mm} мин" if h else f"{mm} мин")
+
+
+def heartbeat_loop():
+    """Главная программа раз в минуту отмечается. Если отметок долго не было (компьютер был выключен, спал
+    или программа падала), после запуска пишет в группу «Отчёты», сколько длился простой."""
+    try:
+        old = json.loads(BEAT.read_text(encoding="utf-8")) if BEAT.exists() else None
+    except Exception:
+        old = None
+    now = time.time()
+    if old and now - old.get("t", now) > 10 * 60:
+        why = "программу закрыли" if old.get("clean") else "компьютер был выключен, спал или программа закрылась сама"
+        t0 = time.strftime("%d.%m %H:%M", time.localtime(old["t"]))
+        msg = (f"⚡ Программа снова работает.\nПростой: с {t0} до {time.strftime('%H:%M')} ({_dur(now - old['t'])}).\n"
+               f"Причина: {why}.\nИщу новые клипы, очередь нарезки продолжится сама.")
+        threading.Thread(target=m.tg_message, args=(msg, "report"), daemon=True).start()
+    last = now
+    while True:
+        now = time.time()
+        if now - last > 5 * 60:                  # компьютер спал, а программа была открыта
+            msg = (f"😴 Компьютер спал с {time.strftime('%H:%M', time.localtime(last))} до {time.strftime('%H:%M')} "
+                   f"({_dur(now - last)}), всё это время клипы не резались.\n"
+                   "Чтобы не засыпал: Параметры → Система → Питание → Сон → Никогда.")
+            threading.Thread(target=m.tg_message, args=(msg, "report"), daemon=True).start()
+        last = now
+        try:
+            BEAT.write_text(json.dumps({"t": now, "clean": False}), encoding="utf-8")
+        except Exception:
+            pass
+        live_register()
+        if A.quit.wait(60):
+            break
+    try:
+        BEAT.write_text(json.dumps({"t": time.time(), "clean": True}), encoding="utf-8")
+    except Exception:
+        pass
+
+
 # обновления
 def update(d):
     import updater
@@ -966,8 +1591,10 @@ def update(d):
             A.upd["info"] = res if res.get("available") else None
             if not A.upd["info"]:
                 return {"error": "сначала проверь обновления"}
-        if A.busy or A.jobs.qsize() or children_busy():
-            return {"error": "Сначала дождись конца монтажа во всех профилях, потом ставь обновление."}
+        busy = (["этом профиле"] if (A.busy or A.jobs.qsize() or VOD["busy"]) else []) + children_rendering()
+        if busy:
+            return {"error": "Сейчас идёт монтаж или нарезка стрима (" + ", ".join(busy)
+                             + "). Дождись конца, потом ставь обновление."}
         done = updater.apply(A.upd["info"])
         A.log("Обновлено: " + ", ".join(done) + ". Перезапускаю программу…")
         for port in ROLE["children"].values():
@@ -993,6 +1620,8 @@ def look(d):
             A.st["sub_anim"] = d["anim"]
         if "zoom" in d:
             A.st["zoom"] = bool(d["zoom"])
+        if "teaser" in d:
+            A.st["teaser"] = bool(d["teaser"])
         if "sub" in d:
             if d["sub"] is None:
                 A.st.setdefault("sub_pos", {}).pop(d["fmt"], None)
@@ -1025,8 +1654,12 @@ ACTIONS = {
     "banners": banners,
     "tt": tt_req,
     "leaders": leaders_req,
+    "editor": editor_req,
     "update": update,
     "look": look,
+    "remote": remote_req,
+    "cancel": cancel_req,
+    "blog": blog_req,
 }
 
 
@@ -1114,6 +1747,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/pvideo.mp4":
                 f = A.pvv.get("file")
                 return self._video(f) if f and Path(f).exists() else self._send(404)
+            if path == "/media":
+                f = MEDIA.get(q.get("id", ""))
+                return self._video(f) if f and Path(f).exists() else self._send(404)
             if path == "/video":
                 f = A.item(q["id"])["file"]
                 return self._video(safe_copy(q["id"], f) if q.get("safe") else f)
@@ -1163,6 +1799,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(403)
         name = urllib.parse.urlparse(self.path).path.strip("/").replace("api/", "")
         n = int(self.headers.get("Content-Length") or 0)
+        if name == "upload":                     # файл перетащили в окно
+            got = save_upload(self, self._qs().get("name") or "video.mp4", n)
+            return self._json({"path": got} if got else {"error": "файл не загрузился"})
         try:
             d = json.loads(self.rfile.read(n).decode("utf-8") or "{}") if n else {}
             fn = ACTIONS.get(name)
@@ -1224,6 +1863,19 @@ def video_broken(d):
 ACTIONS["video_broken"] = video_broken
 
 
+def video_log(d):
+    """Почему окно не показало видео клипа: пишем в журнал, чтобы было видно причину."""
+    try:
+        name = Path(A.item(d.get("id"))["file"]).name
+    except Exception:
+        name = str(d.get("id"))[:40]
+    A.log(f"видео в окне не показалось ({'копия' if d.get('safe') else 'оригинал'}): {str(d.get('why'))[:120]} · {name}")
+    return {"ok": True}
+
+
+ACTIONS["video_log"] = video_log
+
+
 def _has(cid):
     try:
         A.item(cid)
@@ -1242,12 +1894,23 @@ def safe_copy(cid, src):
         if not out.exists() or out.stat().st_size < 1000:
             out.parent.mkdir(parents=True, exist_ok=True)
             tmp = out.with_suffix(".tmp.mp4")
-            subprocess.run(["ffmpeg", "-v", "error", "-y", "-hwaccel", "auto", "-i", str(src), "-vf", "scale=854:-2,fps=30,format=yuv420p",
-                            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26", "-profile:v", "main",
-                            "-threads", "4", "-c:a", "aac", "-b:a", "96k", "-ac", "2", "-movflags", "+faststart", str(tmp)],
-                           capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            if tmp.exists():
-                tmp.replace(out)
+            err = ""
+            for hw in (["-hwaccel", "auto"], []):    # видеокарта иногда не справляется: тогда без неё
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+                r = subprocess.run(["ffmpeg", "-v", "error", "-y", *hw, "-i", str(src), "-vf", "scale=854:-2,fps=30,format=yuv420p",
+                                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26", "-profile:v", "main",
+                                    "-threads", "4", "-c:a", "aac", "-b:a", "96k", "-ac", "2", "-movflags", "+faststart", str(tmp)],
+                                   capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                if r.returncode == 0 and tmp.exists() and tmp.stat().st_size > 1000:
+                    tmp.replace(out)
+                    break
+                err = ((r.stderr or "").strip().splitlines() or ["?"])[-1][:160]
+            else:
+                A.log(f"копия клипа для окна не получилась: {err}")
     return str(out) if out.exists() else src
 
 
@@ -1376,9 +2039,26 @@ def run(port=0, window=True, token=None, parent=0, start=""):
         if msg:
             A.log(msg)
         start_children()
-    threading.Thread(target=worker, daemon=True).start()
+    threading.Thread(target=worker, name="montage-worker", daemon=True).start()
     threading.Thread(target=auto_find_loop, daemon=True).start()
     threading.Thread(target=cleanup_loop, daemon=True).start()
+    threading.Thread(target=daily_loop, daemon=True).start()
+    threading.Thread(target=vodq_loop, daemon=True).start()
+    live_register()
+    if ROLE["child"]:
+        def live_loop():
+            while not A.quit.wait(60):
+                live_register()
+        threading.Thread(target=live_loop, daemon=True).start()
+    else:
+        threading.Thread(target=heartbeat_loop, daemon=True).start()
+    try:                                         # кнопки «Залил / Не буду», /plan и управление с телефона
+        import tgbot
+        tgbot.LIVE_DIR = LIVE_DIR
+        tgbot.start(A.log)
+    except Exception as e:
+        A.log(f"телеграм-бот не запустился: {e}")
+
     threading.Thread(target=prep_worker, daemon=True).start()
 
     def fonts_job():                             # шрифты для субтитров скачиваются один раз
@@ -1404,6 +2084,10 @@ def run(port=0, window=True, token=None, parent=0, start=""):
     finally:
         srv.shutdown()
         if not ROLE["child"]:
+            try:
+                BEAT.write_text(json.dumps({"t": time.time(), "clean": True}), encoding="utf-8")
+            except Exception:
+                pass
             try:
                 PORT_FILE.unlink()
             except Exception:

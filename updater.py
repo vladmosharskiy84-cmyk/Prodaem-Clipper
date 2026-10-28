@@ -20,7 +20,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 URL_FILE = BASE / "update_url.txt"
 STATE_FILE = BASE / "update_state.json"
-FILES = ["montage.py", "review.py", "top5.py", "fixcam.py", "clipfinder.py", "updater.py", "webapp.py", "ui.html", "logo_src.png", "highlights.py", "accounts.py", "agents.py", "leaders.py"]
+FILES = ["montage.py", "review.py", "top5.py", "fixcam.py", "clipfinder.py", "updater.py", "webapp.py", "ui.html", "logo_src.png", "highlights.py", "accounts.py", "agents.py", "leaders.py", "tgbot.py", "blogger.py"]
 
 
 def base_url():
@@ -79,11 +79,24 @@ def apply(info):
     """Скачивает и ставит обновление. Сначала проверяет все файлы целиком и только потом заменяет:
     если хоть один файл битый или с ошибкой, программа остаётся как была."""
     url = base_url()
+    fresh = check()                              # сверяемся с хранилищем заново: старый список мог устареть
+    if fresh.get("changed") is not None and not fresh.get("error"):
+        info = fresh
     tmp = BASE / "cache" / "update_tmp"
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True, exist_ok=True)
     for name in info["changed"]:
-        data = _get(url + name)
+        data = b""
+        for attempt in range(4):                 # GitHub иногда пару минут отдаёт старую копию: ждём и пробуем ещё
+            data = _get(url + name)
+            if hashlib.sha256(data).hexdigest() == info["files"][name]:
+                break
+            if attempt == 1:                     # может, это version.json устарел, а файлы уже новые
+                again = check()
+                if again.get("files", {}).get(name) == hashlib.sha256(data).hexdigest():
+                    info = again
+                    break
+            time.sleep(5 * (attempt + 1))
         if hashlib.sha256(data).hexdigest() != info["files"][name]:
             raise RuntimeError(f"файл {name} скачался не полностью, попробуй ещё раз через пару минут")
         (tmp / name).write_bytes(data)

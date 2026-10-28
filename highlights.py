@@ -326,7 +326,7 @@ def ask_claude(cands, info, n, cfg):
     try:
         r = requests.post("https://api.anthropic.com/v1/messages",
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                          json={"model": cfg.get("claude_pick_model", cfg.get("claude_model", "claude-haiku-4-5")),
+                          json={"model": cfg.get("cheap_model", "claude-haiku-5-5"),
                                 "max_tokens": 2500, "messages": [{"role": "user", "content": text}]}, timeout=180)
         if r.status_code != 200:
             print(f"  Claude ответил {r.status_code}: {r.text[:200]}")

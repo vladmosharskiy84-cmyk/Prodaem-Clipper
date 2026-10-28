@@ -42,6 +42,27 @@ BAD_EN = re.compile(r"(?:fuck|shit|bitch|cunt|asshole|nigg|fagg?ot|retard|pussy|
 _LANG = []
 
 
+def read_jsonl(path):
+    """Строки файла-списка (passports.jsonl и т.п.). Битые строки (оборванная запись, нехватка места) пропускаются,
+    чтобы из-за одной строки не ломалась вся программа."""
+    out = []
+    try:
+        raw = Path(path).read_bytes().replace(b"\x00", b"")
+    except Exception:
+        return out
+    for line in raw.decode("utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            v = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(v, dict):
+            out.append(v)
+    return out
+
+
 def lang():
     """Язык профиля из настроек: ru или en. От него зависят фильтр мата, подсказки Claude и хэштеги."""
     if not _LANG:
@@ -176,7 +197,7 @@ def ai_fix_words(words, clip, cfg):
             r = requests.post("https://api.anthropic.com/v1/messages",
                               headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                                        "content-type": "application/json"},
-                              json={"model": cfg.get("claude_model", "claude-haiku-4-5"),
+                              json={"model": cfg.get("cheap_model", "claude-haiku-5-5"),
                                     "max_tokens": 200 + 8 * len(part),
                                     "messages": [{"role": "user",
                                                   "content": FIX_PROMPT.format(n=len(part), body=body)}]}, timeout=90)
@@ -279,7 +300,7 @@ def ai_meta(words, streamer, cfg):
             "https://api.anthropic.com/v1/messages",
             headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
-            json={"model": cfg.get("claude_model", "claude-haiku-4-5"), "max_tokens": 300,
+            json={"model": cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 300,
                   "messages": [{"role": "user",
                                 "content": (PROMPT_EN if lang() == "en" else PROMPT).format(
                                     streamer=streamer or "unknown", text=text)}]},
@@ -1568,6 +1589,8 @@ def tg_test(token):
 
 
 TG_TOPICS = BASE / "telegram_topics.json"
+TG_RESERVE = BASE / "telegram_reserve.json"   # группа «Запас»: ролики с оценкой 5–6 и вытесненные из плана
+TG_REPORTS = BASE / "telegram_reports.json"   # группа «Отчёты»: отчёты, разборы и сообщения о работе программы
 
 
 def tg_setup():
@@ -1619,6 +1642,28 @@ def tg_setup():
           f"своё видео в тему «{names.get(found['manual'], 'с командой /my')}».")
 
 
+def tg_copy(path, target_mb=44):
+    """Копия ролика до target_mb для Telegram. Сначала то же разрешение с битрейтом под длину,
+    если не влезает — 720x1280, и так пока не влезет. Оригинал не трогается."""
+    try:
+        dur = probe(path)["dur"]
+    except Exception:
+        return None
+    CACHE.mkdir(exist_ok=True)
+    out = CACHE / f"tg_{Path(path).stem[:40]}.mp4"
+    ab = 128 if dur < 120 else 96
+    tries = [(None, 1.0), (None, 0.85), ("720:1280", 0.85), ("720:1280", 0.65), ("540:960", 0.6)]
+    for scale, k in tries:
+        vb = max(300, int((target_mb * 8 * 1000 * k) / max(1.0, dur) - ab - 20))     # кбит/с под видео
+        vf = ["-vf", f"scale={scale}:flags=lanczos"] if scale else []
+        r = run(["ffmpeg", "-v", "error", "-y", "-i", str(path)] + vf +
+                ["-c:v", "libx264", "-preset", "veryfast", "-b:v", f"{vb}k", "-maxrate", f"{int(vb * 1.3)}k",
+                 "-bufsize", f"{vb * 2}k", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", f"{ab}k",
+                 "-movflags", "+faststart", str(out)])
+        if r.returncode == 0 and out.exists() and out.stat().st_size / 1e6 <= 49:
+            return out
+    return None
+
 def tg_message(text, kind="clips"):
     """Короткое текстовое сообщение в тот же чат или тему, куда идут ролики."""
     if not TG_TOKEN.exists():
@@ -1627,14 +1672,19 @@ def tg_message(text, kind="clips"):
         import requests
         token = TG_TOKEN.read_text(encoding="utf-8-sig").strip()
         thread = None
-        if TG_TOPICS.exists():
+        if kind == "report" and TG_REPORTS.exists():   # отчёты идут только в свою группу
+            rs = json.loads(TG_REPORTS.read_text(encoding="utf-8"))
+            chat, thread = rs["chat_id"], rs.get("thread")
+        elif TG_TOPICS.exists():
             topics = json.loads(TG_TOPICS.read_text(encoding="utf-8"))
             chat, thread = topics["chat_id"], topics.get(kind)
         else:
             chat = tg_chat_id(token)
         if not chat:
             return False
-        data = {"chat_id": chat, "text": text[:3500]}
+        if kind == "report" and not TG_REPORTS.exists():
+            text += "\n\n(Чтобы отчёты приходили отдельно: создай группу, добавь туда бота и напиши в ней /reports)"
+        data = {"chat_id": chat, "text": text[:3900]}
         if thread:
             data["message_thread_id"] = thread
         return requests.post(f"https://api.telegram.org/bot{token}/sendMessage", data=data, timeout=30).status_code == 200
@@ -1653,7 +1703,14 @@ def tg_send(path, p, hashtags, kind="clips"):
         import requests
         token = TG_TOKEN.read_text(encoding="utf-8-sig").strip()
         thread = None
-        if TG_TOPICS.exists():
+        if kind == "reserve":
+            if not TG_RESERVE.exists():
+                print("  в группу «Запас» не отправлено: она не настроена. Создай группу в Telegram, добавь туда бота "
+                      "и напиши в ней /reserve")
+                return False
+            rs = json.loads(TG_RESERVE.read_text(encoding="utf-8"))
+            chat, thread = rs["chat_id"], rs.get("thread")
+        elif TG_TOPICS.exists():
             topics = json.loads(TG_TOPICS.read_text(encoding="utf-8"))
             chat, thread = topics["chat_id"], topics.get(kind)
         else:
@@ -1662,14 +1719,21 @@ def tg_send(path, p, hashtags, kind="clips"):
             print("  в Telegram не отправлено: бот не знает, куда слать")
             return False
         size = Path(path).stat().st_size / 1e6
-        if size > 49:
-            print(f"  в Telegram не отправлено: ролик {size:.0f} МБ, а бот может отправить только до 50 МБ")
-            return False
-        warn = "ВНИМАНИЕ: на экране игра, партнёрка может не засчитать\n" if p.get("game_on_screen") else ""
+        if size > 49:                            # бот принимает до 50 МБ: шлём сжатую копию, оригинал остаётся в папке
+            small = tg_copy(path)
+            if not small:
+                print(f"  в Telegram не отправлено: ролик {size:.0f} МБ, а сжать до 50 МБ не получилось")
+                return False
+            print(f"  ролик {size:.0f} МБ: в Telegram ушла копия {Path(small).stat().st_size / 1e6:.0f} МБ, "
+                  "оригинал в полном качестве в папке")
+            path = small
+        warn = ("✏️ ИСПРАВЛЕННАЯ ВЕРСИЯ\n" if p.get("edited") else "") + \
+               ("ВНИМАНИЕ: на экране игра, партнёрка может не засчитать\n" if p.get("game_on_screen") else "")
         ag, cap = p.get("agents"), None
         if ag:                                   # что решили критик, судья и продюсер
             pl = ag.get("plan") or {}
-            head = ("✅ ВЫКЛАДЫВАТЬ" if ag["decision"] == "publish" else "⛔ СУДЬЯ: В БРАК") + \
+            head = ("✅ ВЫКЛАДЫВАТЬ" if ag["decision"] == "publish" else "🟡 ЗАПАС" if kind == "reserve"
+                    else "⛔ СУДЬЯ: В БРАК") + \
                    f" · критик {ag.get('score', '?')}/10\n{ag.get('reason', '')}\n"
             if pl:
                 head += f"→ @{pl['account']} · {pl.get('when', pl.get('time', ''))}\n\n{pl.get('caption', '')}\n{hashtags}\n"
@@ -1677,16 +1741,26 @@ def tg_send(path, p, hashtags, kind="clips"):
                     head += "\nКритик: " + "; ".join(str(x) for x in ag["issues"][:2]) + "\n"
                 cap = (warn + head)[:1000]
             else:
-                cap = (warn + head + "\n" + "; ".join(str(x) for x in ag.get("issues", [])[:3]))[:1000]
+                cap = (warn + head + "\n" + (f"{p.get('final_title', '')}\n{hashtags}\n\n" if kind == "reserve" else "")
+                       + "Критик: " + "; ".join(str(x) for x in ag.get("issues", [])[:3]))[:1000]
         cap = cap or (warn + f"Потенциал: {p['potential']}/100 ({potential_label(p['potential'])})\n"
                f"Стример: {p['streamer']} | {p['format']} | {p['duration']} с\n\n"
                f"{p['final_title']}\n{p.get('description') or ''}\n\n{hashtags}")[:1000]
         pl = (ag or {}).get("plan") or {}
-        pre = f"{pl['account']}_{pl.get('time', '').replace(':', '-')}_" if pl else ("BRAK_" if ag else "")
+        pre = f"{pl['account']}_{pl.get('time', '').replace(':', '-')}_" if pl else \
+            ("ZAPAS_" if kind == "reserve" else "BRAK_" if ag else "")
         name = re.sub(r'[\\/:*?"<>|]+', " ", f"{pre}{p['potential']:03d}_{p['streamer']}_{p['final_title']}")[:80] + ".mp4"
         data = {"chat_id": chat, "caption": cap}
         if thread:
             data["message_thread_id"] = thread
+        try:                                     # кнопки «Залил» / «Не буду»: отметка сразу попадает в план
+            import tgbot
+            if pl.get("pid"):
+                data["reply_markup"] = json.dumps(tgbot.buttons(pl["pid"]), ensure_ascii=False)
+            elif kind == "reserve" or (ag and ag.get("decision") == "publish") or not ag:
+                data["reply_markup"] = json.dumps(tgbot.pick_buttons(p, hashtags), ensure_ascii=False)
+        except Exception:
+            pass
         for attempt in range(1, 5):              # связь с Telegram иногда рвётся посреди загрузки: пробуем ещё
             try:
                 with open(path, "rb") as f:
@@ -2420,8 +2494,11 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
         segs, content = [(0.0, info["dur"])], info["dur"]
         ban_dur, split_out, splits_src, total = 0.0, [], [], info["dur"]
     else:
-        words = ai_fix_words(merge_hyphens(transcribe(clip, cfg)), clip, cfg)
-        ai = ai_meta(words, streamer, cfg)
+        if (force or {}).get("words") is not None:            # субтитры поправлены в редакторе
+            words = [dict(w) for w in force["words"] if str(w.get("t", "")).strip()]
+        else:
+            words = ai_fix_words(merge_hyphens(transcribe(clip, cfg)), clip, cfg)
+        ai = ai_meta(words, streamer, cfg) if (force or {}).get("words") is None else None
         title = fixed_title or (ai["title"] if ai else fix_title(title, words))
         segs = keep_segments(words, info["dur"], fmt, cfg, clip)
         s0, e0 = (force or {}).get("start_at"), (force or {}).get("end_at")     # судья попросил обрезать
@@ -2429,7 +2506,21 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
             s0, e0 = float(s0 or 0), float(e0 or info["dur"])
             segs = [(max(a, s0), min(b, e0)) for a, b in segs if b > s0 + 0.05 and a < e0 - 0.05] or [(s0, e0)]
             words = [w for w in words if any(a - 0.05 <= w["s"] < b for a, b in segs)]
-            print(f"  обрезка по решению судьи: {s0:.1f}–{e0:.1f} с исходника")
+            print(f"  обрезка: {s0:.1f}–{e0:.1f} с исходника")
+        for ca, cb in (force or {}).get("cuts") or []:     # куски, вырезанные в редакторе
+            ca, cb = float(ca), float(cb)
+            nsegs = []
+            for a, b in segs:
+                if cb <= a or ca >= b:
+                    nsegs.append((a, b))
+                    continue
+                if a < ca - 0.05:
+                    nsegs.append((a, ca))
+                if cb < b - 0.05:
+                    nsegs.append((cb, b))
+            segs = nsegs or segs
+        if (force or {}).get("cuts"):
+            words = [w for w in words if any(a - 0.05 <= w["s"] < b for a, b in segs)]
         cut = info["dur"] - sum(b - a for a, b in segs) - (float((force or {}).get("start_at") or 0)
                                                            + max(0.0, info["dur"] - float((force or {}).get("end_at") or info["dur"])))
         if fmt != "talk" and cut > 0.5:
@@ -2441,6 +2532,9 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
         print(f"  баннер: {Path(banner).name}, ускорение {ban_speed:g}x" + (f", прозрачность {bnr['fade']:g}%" if bnr.get("fade") else ""))
         ban_dur = probe(banner)["dur"] / ban_speed
         split_out = banner_splits(words, segs, content, ban_dur, cfg)     # один баннер или два
+        if (force or {}).get("banner_at") is not None:   # место баннера выбрано в редакторе (секунда исходника)
+            bo = src_to_out(float(force["banner_at"]), segs)
+            split_out = [min(max(0.5, bo), max(0.5, content - 0.5))]
         splits_src = [out_to_src(x, segs) for x in split_out]
         total = content + ban_dur * len(split_out)
     try:
@@ -3076,6 +3170,16 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
     if r.returncode != 0:
         print(r.stderr[-800:])
         return None
+    teaser = 0.0
+    if (force or {}).get("teaser", cfg.get("teaser", True)):
+        bans = [(b0, b0 + ban_dur) for b0 in [sp + k * ban_dur for k, sp in enumerate(split_out)]]
+        try:
+            teaser = add_teaser(out, bans)
+        except Exception as e:
+            print(f"  начало с пика пропущено: {e}")
+    if teaser:
+        total += teaser
+        t1 += teaser
     return {"layout": mode + ("+satis" if satis else ""), "style": style, "cam_used": cam_first,
             "src_w": sw, "final_title": title, "description": ai["description"] if ai else "",
             "ai_score": ai["score"] if ai else None, "title_by": "claude" if ai else "auto",
@@ -3083,6 +3187,51 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
             "banner_len": round(ban_dur * nban, 2), "cut_sec": round(info["dur"] - content, 2),
             "words": len(words), "speech_share": round(
                 sum(w["e"] - w["s"] for w in words) / max(content, 0.1), 2)}
+
+
+def add_teaser(out, bans, length=2.0):
+    """Первая секунда: если самый громкий момент ролика не в начале, его 2 секунды ставятся в самое начало,
+    а дальше ролик идёт как был. Баннер и первые 3 секунды не берутся. Возвращает добавленные секунды или 0."""
+    import numpy as np
+    out = Path(out)
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(out), "-vn", "-ac", "1", "-ar", "8000", "-f", "f32le", "-"],
+                         capture_output=True).stdout
+    a = np.frombuffer(raw, dtype=np.float32)
+    if a.size < 8000 * 8:
+        return 0.0
+    n = a.size // 800
+    db = 20 * np.log10(np.sqrt((a[:n * 800].reshape(n, 800) ** 2).mean(axis=1)) + 1e-6)     # шаг 0.1 с
+    win = np.convolve(db, np.ones(15) / 15, mode="same")                                    # громкость за 1.5 с
+    dur = n / 10
+    ok = np.ones(n, dtype=bool)
+    ok[:30] = False                                                                          # первые 3 с
+    ok[int((dur - length - 0.5) * 10):] = False
+    for b0, b1 in bans:
+        ok[max(0, int((b0 - length - 0.3) * 10)):int((b1 + 0.3) * 10)] = False              # не баннер
+    if not ok.any():
+        return 0.0
+    med = float(np.median(db))
+    head = float(win[:30].max())
+    i = int(np.argmax(np.where(ok, win, -999)))
+    if win[i] - med < 6 or win[i] - head < 3:       # пик не выделяется или начало и так сильное
+        return 0.0
+    st = max(3.0, i / 10 - 0.6)                     # чуть раньше пика, чтобы попала завязка
+    cut = CACHE / f"teaser_{os.getpid()}_{threading.get_ident()}.mp4"
+    full = out.with_name(out.stem + "_tz.mp4")
+    r = run(["ffmpeg", "-v", "error", "-y", "-i", str(out), "-filter_complex",
+             f"[0:v]trim={st:.2f}:{st + length:.2f},setpts=PTS-STARTPTS[tv];"
+             f"[0:a]atrim={st:.2f}:{st + length:.2f},asetpts=PTS-STARTPTS,afade=t=out:st={length - 0.08:.2f}:d=0.08[ta];"
+             f"[0:v]setpts=PTS-STARTPTS[mv];[0:a]asetpts=PTS-STARTPTS,afade=t=in:d=0.05[ma];"
+             "[tv][ta][mv][ma]concat=n=2:v=1:a=1[v][a]", "-map", "[v]", "-map", "[a]",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+             "-map_metadata", "-1", "-movflags", "+faststart", str(full)])
+    cut.unlink(missing_ok=True)
+    if r.returncode != 0 or not full.exists():
+        full.unlink(missing_ok=True)
+        return 0.0
+    full.replace(out)
+    print(f"  начало с пика: в начало поставлены {length:.0f} с с {st:.1f} с ролика")
+    return length
 
 
 def refix(json_path, force, remember, cfg, enc, send=True):
@@ -3244,8 +3393,7 @@ def main():
         outdir = BASE / "clips" / "grids"
         outdir.mkdir(parents=True, exist_ok=True)
         done_s = set()
-        for line in reversed(PASSPORTS.read_text(encoding="utf-8").splitlines()):
-            p = json.loads(line)
+        for p in reversed(read_jsonl(PASSPORTS)):
             clip = BASE / p["file"]
             if p["format"] != "cs" or p["streamer"] in done_s or not clip.exists():
                 continue
@@ -3287,7 +3435,7 @@ def main():
     if not PASSPORTS.exists():
         sys.exit("Нет passports.jsonl. Сначала запусти clipfinder.py")
     done = 0
-    passports = [json.loads(x) for x in PASSPORTS.read_text(encoding="utf-8").splitlines() if x.strip()]
+    passports = read_jsonl(PASSPORTS)
     passports.sort(key=lambda p: (p.get("found_at", ""), p.get("twitch_views", 0)), reverse=True)
     for p in passports:
         clip = BASE / p["file"]

@@ -1,20 +1,22 @@
 {
-  "version": "2026.10.24 07:02",
-  "time": 1792825325.8786268,
-  "notes": "Строгий отбор: 3 лучших свежих ролика в день на аккаунт, слабые и старые не проходят. Карточки без камеры, баннер без краёв, автоочистка",
+  "version": "2026.10.28 08:26",
+  "time": 1793176006.6669555,
+  "notes": "Мурчик (монтаж блогера): главные слова лесенкой, вырезка «э» и пауз, музыка, щелчки, свой шрифт; стоп монтажа; отчёты в отдельную группу; управление с телефона; порог 6000",
   "files": {
-    "montage.py": "368ec62feec41c0eeee8825b134b0b2694b0c7e646b3bf41f816e6001fed2197",
-    "review.py": "e965db558cd4c0c9adfc879f736a477732fab7dba8f859b9843a306fafffc327",
-    "top5.py": "82d6960486bf7e741acbd75e319e8a03a62862cac23fcaf6eee40ee5cb02e7db",
+    "montage.py": "b10cf1f77f39b034ab9df5cfacf8c74a34386bd3aec26c1dc90657f45a838322",
+    "review.py": "6ca95618dc79c52ee9b2fd1aca0018e1dec13e8a334222df0ca2b0c58fe48af8",
+    "top5.py": "c53864b1b1e8d908a4246a86929c80c2b32014fb64c98b374f92f27361af556a",
     "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
     "clipfinder.py": "1ad5f5af546ab59c59f9e8ef44a4a821c39252d537848b041dc277cde654151b",
-    "updater.py": "ecbebd32788961a5ac26368e1bb412af1da2aa3f1d0f92ecb85b2b3721cb862a",
-    "webapp.py": "d7d9a7e581d39d8ec91366f6e64e5e5a2fa06e647ea685b7510c2f3454e6f3e8",
-    "ui.html": "d5f7f43fff671dbf0eb2234e6b07de86ab935040f3debc1a50692a2b50206f15",
+    "updater.py": "ab51e41cfcd45d65c46670910037356318a7ea2da66bdfafa9acff13e21b4481",
+    "webapp.py": "8f4020ac31a9ae46c9e4f6befd1451a4772469d9413a704087833eca1f1ef18a",
+    "ui.html": "e8e1803d3f96b0bdd833d8bf42511ac1cd8fb564f2f83ccc666d362087b9cbb2",
     "logo_src.png": "e43b51bb73da86652be2c2adac971e5b39557d895d84a4c2449e9b99f95c1739",
-    "highlights.py": "111cfd98254055d0d97525de8375fc49ed4a94ee3e13990cf4eb57c862e3012e",
-    "accounts.py": "43fd79e15e74b0f2d7fd7fb008df356823505780ade87b5d60fbef94865b0bc4",
-    "agents.py": "a68499a7d5a58bafd04953f88ff11a1511fa9c4c2dc8ec7f9aa3c7c0c4630499",
-    "leaders.py": "1edf5e223fbc2655afc2aa47c7828cafdc3bb515867e8a6c8a1de21fb432d3b9"
+    "highlights.py": "450eca04d2b1865766bc783091c5c8a153322ad987903cda9bb4f4537427d35e",
+    "accounts.py": "6fc93b02487dcb40ef29d91251f3ee13fe5a710fe7ed2287559670ae0ec59be0",
+    "agents.py": "33669b96f0e55baa7eb7cbe41f34e6c7db5e0344dfe422a24b5ca9a2c43ba79b",
+    "leaders.py": "06951d301f174cb68aed842807048974977038e49ae9439738ac155ab69a7dc1",
+    "tgbot.py": "3f1b7305dbb32ee153741b736f2fb3a75a6e168b911d1e57dc51dbabdf2a7619",
+    "blogger.py": "93c20daf236f542ac03e4b0a15cdbfb0965c7cfa3362396d689414f9b14b7730"
   }
 }

@@ -75,10 +75,9 @@ def load_queue(st):
     now_utc = time.time()
     if PASSPORTS.exists():
         seen = set()
-        for line in PASSPORTS.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
+        for p in m.read_jsonl(PASSPORTS):
+            if not p.get("clip_id") or not p.get("file"):
                 continue
-            p = json.loads(line)
             if p["clip_id"] in seen or p["clip_id"] in st["clips"]:
                 continue
             seen.add(p["clip_id"])
@@ -98,7 +97,15 @@ def load_queue(st):
                 continue
             p = dict(p, file=str(raw))
             found.append(p)
-    found.sort(key=lambda p: (p.get("found_at", ""), p.get("score", 0), p.get("twitch_views", 0)), reverse=True)
+    try:                                          # стримеры, чьи ролики набрали порог выплаты, — первыми
+        hot = json.loads((BASE / "analytics" / "settings.json").read_text(encoding="utf-8")).get("hot") or {}
+    except Exception:
+        hot = {}
+    for p in found:
+        if p.get("streamer") in hot:
+            p["hot"] = hot[p["streamer"]]
+    found.sort(key=lambda p: (1 if p.get("hot") else 0, p.get("found_at", "")[:10], p.get("score", 0),
+                              p.get("twitch_views", 0)), reverse=True)
     return items + found
 
 
@@ -192,10 +199,9 @@ def streamers_dialog(root, st, dark, on_change, say):
         save_streamers([x for x in load_streamers() if x != login])
         dropped = 0                                  # его клипы убираем из очереди на отбор
         if PASSPORTS.exists():
-            for line in PASSPORTS.read_text(encoding="utf-8").splitlines():
-                if line.strip():
-                    p = json.loads(line)
-                    if p.get("streamer") == login and p["clip_id"] not in st["clips"]:
+            for p in m.read_jsonl(PASSPORTS):
+                if True:
+                    if p.get("streamer") == login and p.get("clip_id") and p["clip_id"] not in st["clips"]:
                         st["clips"][p["clip_id"]] = "skipped"
                         dropped += 1
         save_state(st)
@@ -699,9 +705,14 @@ def run_job(job, cfg, enc, log=print):
     if job.get("sub_y"):
         force["sub_y"] = int(job["sub_y"])           # положение субтитров задано вручную
     force.update(style=job.get("style"), font=job.get("font"), content=job.get("content"),
-                 sub_anim=job.get("sub_anim"), zoom=job.get("zoom", True))
+                 sub_anim=job.get("sub_anim"), zoom=job.get("zoom", True), teaser=job.get("teaser", True))
     if job.get("banner"):
         force["banner"] = job["banner"]              # баннер оффера, выбранный в окне для этого клипа
+    edit = job.get("edit") or None                   # правки из редактора: обрезка, вырезанные куски, баннер, субтитры
+    if edit:
+        for k in ("start_at", "end_at", "cuts", "banner_at", "words", "teaser"):
+            if edit.get(k) is not None:
+                force[k] = edit[k]
     sat = m.pick_satis(clip, cfg, force=True) if want_satis else None
     if want_satis and not sat:
         log("  в папке satisfying нет видео: собираю обычный разговорный")
@@ -718,7 +729,7 @@ def run_job(job, cfg, enc, log=print):
         return (out if r else None), r
 
     ag = None
-    if cfg.get("agents", True) and not own:      # критик, судья и продюсер (нужен ключ Claude)
+    if cfg.get("agents", True) and not own and not edit:   # критик, судья и продюсер (нужен ключ Claude)
         try:
             import agents
             words = m.transcribe(clip, cfg)
@@ -729,7 +740,9 @@ def run_job(job, cfg, enc, log=print):
             if ag and ag["decision"] == "publish":
                 p["final_title"] = (res or {}).get("final_title", "")
                 ag["plan"] = agents.producer(dict(p, streamer=streamer, file_out=str(out)), ag, words, cfg, log)
-                if ag["plan"].get("reserve"):
+                if ag["plan"] is None:
+                    log("  продюсер: аккаунты не вписаны (Аналитика → Аккаунты), ролик идёт без плана выкладки")
+                elif ag["plan"].get("reserve"):
                     ag["decision"], ag["reason"] = "reserve", ag["plan"]["why"]
         except ImportError:
             got, res = make({})
@@ -741,7 +754,20 @@ def run_job(job, cfg, enc, log=print):
     if not res:
         log("  не получилось смонтировать")
         return None
+    prev = {}
+    if edit and out.with_suffix(".json").exists():   # исправленная версия: план и подпись остаются прежними
+        try:
+            prev = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+        except Exception:
+            prev = {}
     p.update(res)
+    p["job"] = {k: job.get(k) for k in ("fmt_key", "rects", "captions", "sub_y", "style", "font", "content",
+                                        "sub_anim", "zoom", "banner", "title", "streamer", "teaser")}
+    p["edit"] = edit or prev.get("edit")
+    if edit:
+        p["edited"] = True
+        if prev.get("agents"):
+            ag = prev["agents"]
     p["streamer"] = streamer or "стример"
     p["format"] = fmt
     p["source"] = "manual" if own else "review"
@@ -755,9 +781,15 @@ def run_job(job, cfg, enc, log=print):
             hashtags = pl["hashtags"] or hashtags
             text = pl["caption"] or text
     out.with_suffix(".txt").write_text(text + f"\n\n{hashtags}\n", encoding="utf-8")
-    if ag and ag["decision"] != "publish":       # брак и запас в Telegram не уходят: только 3 лучших на аккаунт
-        p["tg_sent"] = False
-        log(f"  в Telegram не отправлен: {'в запасе' if ag['decision'] == 'reserve' else 'в браке'} — {ag.get('reason', '')}")
+    if ag and ag["decision"] != "publish":       # в основной чат только 3 лучших на аккаунт
+        sc_ = float(ag.get("score") or 0)
+        if ag["decision"] == "reserve" or sc_ >= float(cfg.get("reserve_min", 5)):   # 5–6 и вытесненные: в «Запас»
+            p["tg_sent"] = m.tg_send(out, p, hashtags, "reserve")
+            log(f"  {'отправлен в группу «Запас»' if p['tg_sent'] else 'в «Запас» не ушёл'}: "
+                f"{ag.get('score', '?')}/10 — {ag.get('reason', '')}")
+        else:
+            p["tg_sent"] = False
+            log(f"  в Telegram не отправлен: в браке — {ag.get('reason', '')}")
     else:
         p["tg_sent"] = m.tg_send(out, p, hashtags, kind)
         bumped = ((ag or {}).get("plan") or {}).get("bumped")

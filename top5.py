@@ -156,7 +156,7 @@ def ai_labels(texts, streamer, cfg):
         r = requests.post("https://api.anthropic.com/v1/messages",
                           headers={"x-api-key": m.KEY_FILE.read_text(encoding="utf-8-sig").strip(),
                                    "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                          json={"model": cfg.get("claude_model", "claude-haiku-4-5"), "max_tokens": 400,
+                          json={"model": cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 400,
                                 "messages": [{"role": "user", "content": prompt}]}, timeout=60)
         if r.status_code != 200:
             print(f"  Claude API ответил {r.status_code}: {r.text[:200]}")
@@ -191,7 +191,7 @@ def read_source_list(src, dur, n, cfg):
         r = requests.post("https://api.anthropic.com/v1/messages",
                           headers={"x-api-key": m.KEY_FILE.read_text(encoding="utf-8-sig").strip(),
                                    "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                          json={"model": cfg.get("claude_model", "claude-haiku-4-5"), "max_tokens": 400,
+                          json={"model": cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 400,
                                 "messages": [{"role": "user", "content": [
                                     {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                                  "data": base64.b64encode(jpg).decode()}},
