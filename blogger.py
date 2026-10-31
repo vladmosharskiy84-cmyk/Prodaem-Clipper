@@ -308,11 +308,12 @@ def map_words(words, segs):
 
 
 # ---------- динамика: убрать «э», «ну», запинки и паузы, не теряя смысла ----------
-FILLERS = {"э", "ээ", "эээ", "эм", "эмм", "эммм", "м", "мм", "ммм", "хм", "хмм", "ам", "аа", "ааа", "э-э", "а-а", "м-м", "ы", "ыы"}
+FILLERS = {"э", "ээ", "эээ", "эм", "эмм", "эммм", "м", "мм", "ммм", "хм", "хмм", "ам", "аа", "ааа", "э-э", "а-а", "м-м", "ы", "ыы",
+           "бэ", "мэ", "бе", "ме", "мэ-э", "бэ-э", "ммэ", "эмэ", "мээ", "бээ", "ээм", "уу", "ууу", "мда-а"}
 VERB_PROMPT = "Э-э, ну, мм, короче, это самое. Эм, а-а, в общем, как бы, типа."
 
 
-def transcribe_verbatim(src, cfg):
+def transcribe_verbatim(src, cfg, say=None, should_stop=None, vad=False):
     """Расшифровка «как сказано»: с «э», «мм» и запинками, чтобы их можно было вырезать.
     Обычное распознавание их выкидывает из текста, а звук остаётся в ролике."""
     cache = Path(src).with_suffix(".verb.json")
@@ -333,10 +334,17 @@ def transcribe_verbatim(src, cfg):
     audio = np.frombuffer(raw, dtype=np.float32)
     if audio.size < 16000:
         return []
-    segs, _ = m._model.transcribe(audio, language=cfg.get("language", "ru"), word_timestamps=True, vad_filter=False,
+    segs, _ = m._model.transcribe(audio, language=cfg.get("language", "ru"), word_timestamps=True, vad_filter=vad,
                                   initial_prompt=VERB_PROMPT, condition_on_previous_text=False)
     words = []
+    dur = audio.size / 16000
+    last = time.time()
     for s in segs:
+        if should_stop and should_stop():
+            raise Stop("остановлено")
+        if say and time.time() - last > 15:          # длинное видео: показываем, сколько уже распознано
+            last = time.time()
+            say(f"распознаю речь: {int(s.end // 60)}:{int(s.end % 60):02d} из {int(dur // 60)}:{int(dur % 60):02d}")
         for w in s.words or []:
             t = w.word.strip()
             if t:
@@ -356,8 +364,10 @@ def drop_words(words, cfg, say=print):
     for i in range(1, len(words)):               # «я я», «он он»: повтор подряд
         if _norm(words[i]["t"]) and _norm(words[i]["t"]) == _norm(words[i - 1]["t"]) and words[i]["s"] - words[i - 1]["e"] < 0.6:
             drop.add(i - 1)
+    # слова-паразиты («ну», «короче») Claude вырезает только по отдельной настройке: по умолчанию режем ТОЛЬКО звуки
+    # «э», «мэ», «бэ», «мм» и повторы, чтобы ни один кусок истории не пропал
     key = m.KEY_FILE.read_text(encoding="utf-8-sig").strip() if m.KEY_FILE.exists() else ""
-    if key and len(words) >= 8:
+    if key and len(words) >= 8 and cfg.get("blog_cut_parasites"):
         try:
             import requests
             txt = " ".join(f"{i}:{w['t']}" for i, w in enumerate(words))
@@ -439,13 +449,239 @@ def tight_segments(words, keep, dur, src, max_gap=0.22):
     return [(a, b) for a, b in out if b - a > 0.08]
 
 
+# ---------- целое видео: найти лучшие истории и смонтировать каждую ----------
+STORY_LEN = {"short": (20, 40), "mid": (30, 60), "long": (45, 90)}
+STORY_PROMPT = """Ниже расшифровка видео блогера с отметками времени [секунды]. Это его истории и мысли.
+Найди {n} лучших отдельных моментов для TikTok/Reels, аудитория — парни. Что брать (в порядке важности):
+1) треш-истории из жизни: кого-то гопнули, избили, ударили, «запаковали» (задержали, приняли), разборки, жёсткие ситуации;
+2) истории и мысли про деньги: как заработал, как потерял, долги, схемы, бабки;
+3) мотивация для пацанов: дисциплина, характер, спорт, не сдаваться, как изменил жизнь — сказано жёстко и по делу.
+Скучные рассуждения, приветствия, рекламу, «подписывайтесь» не бери.
+
+Каждый момент — законченный кусок, понятный без остального видео, длиной {a}–{b} секунд: начинается сразу с сути или
+цепляющей фразы (без раскачки), заканчивается развязкой, выводом или жёсткой фразой. Не обрывай мысль посередине,
+не начинай с середины фразы. Моменты не пересекаются. Сначала самые сильные.
+
+Для каждого дай 3 главных слова — ключевые темы, по одному слову, с большой буквы (пример: «Бокс», «Спорт», «Связи»):
+они крупно встанут в начале ролика.
+
+Ответ ТОЛЬКО JSON-список:
+[{{"start": секунда начала, "end": секунда конца, "kind": "треш|деньги|мотивация", "words": ["Слово", "Слово", "Слово"],
+  "title": "о чём, 3–6 слов", "why": "почему зайдёт, коротко", "score": 1-10}}]
+
+Расшифровка:
+{text}"""
+
+
+def _json_objects(out):
+    """Список историй из ответа Claude, даже если JSON оборван или вокруг него текст: берём каждый целый {…}."""
+    out = re.sub(r"```(?:json)?|```", "", out or "")
+    try:
+        v = json.loads(out[out.index("["):out.rindex("]") + 1])
+        if isinstance(v, list):
+            return [x for x in v if isinstance(x, dict)]
+    except Exception:
+        pass
+    res, depth, start, in_s, esc = [], 0, None, False, False
+    for i, ch in enumerate(out):
+        if in_s:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_s = False
+            continue
+        if ch == '"':
+            in_s, esc = True, False
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+            if depth == 0 and start is not None:
+                try:
+                    res.append(json.loads(out[start:i + 1]))
+                except Exception:
+                    pass
+    return [x for x in res if isinstance(x, dict) and "start" in x]
+
+
+def _lines(words, step=14):
+    out, cur, t0 = [], [], None
+    for w in words:
+        if t0 is None:
+            t0 = w["s"]
+        cur.append(w["t"])
+        if w["t"][-1:] in ".!?…" or len(cur) >= step:
+            out.append(f"[{t0:.0f}] {' '.join(cur)}")
+            cur, t0 = [], None
+    if cur:
+        out.append(f"[{t0:.0f}] {' '.join(cur)}")
+    return out
+
+
+def pick_stories(words, n, length, cfg, say=print):
+    key = m.KEY_FILE.read_text(encoding="utf-8-sig").strip() if m.KEY_FILE.exists() else ""
+    if not key:
+        raise Stop("чтобы находить лучшие истории в длинном видео, нужен ключ Claude (Настройки и ключи)")
+    a, b = STORY_LEN.get(length, STORY_LEN["mid"])
+    text = "\n".join(_lines(words))
+    import requests
+    stories = []
+    parts, cur = [], []
+    for line in text.split("\n"):                    # длинное видео разбираем частями по ~30 минут текста
+        cur.append(line)
+        if sum(len(x) for x in cur) > 35000:
+            parts.append("\n".join(cur))
+            cur = []
+    if cur:
+        parts.append("\n".join(cur))
+    for chunk in parts:
+        r = requests.post("https://api.anthropic.com/v1/messages",
+                          headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+                          json={"model": cfg.get("story_model") or cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 6000,
+                                "messages": [{"role": "user", "content": STORY_PROMPT.format(n=n, a=a, b=b, text=chunk)}]},
+                          timeout=240)
+        if r.status_code != 200:
+            raise Stop(f"Claude ответил {r.status_code}: {r.text[:200]}")
+        out = "".join(x.get("text", "") for x in r.json()["content"] if x.get("type") == "text")
+        got = _json_objects(out)
+        if got:
+            stories += got
+        else:
+            say("Claude ответил не по формату на часть видео, пропускаю её: " + out[:120].replace("\n", " "))
+    ok = []
+    for st in sorted(stories, key=lambda x: -float(x.get("score") or 0)):
+        try:
+            s0, e0 = float(st["start"]), float(st["end"])
+        except Exception:
+            continue
+        if e0 - s0 < a * 0.6 or e0 - s0 > b * 1.4:
+            continue
+        if any(not (e0 <= x["start"] or s0 >= x["end"]) for x in ok):
+            continue
+        # границы по словам: начало чуть раньше первого слова, конец после последнего
+        ws = [w for w in words if s0 - 1.5 <= w["s"] <= e0 + 1.5]
+        if not ws:
+            continue
+        s_ok = [w["s"] for w in ws if w["s"] >= s0 - 0.6] or [s0]
+        e_ok = [w["e"] for w in ws if w["e"] <= e0 + 0.8] or [e0]
+        s1 = max(0.0, min(s_ok) - 0.25)
+        e1 = max(e_ok) + 0.4
+        ok.append({"start": s1, "end": e1, "words": [str(x) for x in (st.get("words") or [])][:4],
+                   "title": (f"[{st['kind']}] " if st.get("kind") else "") + str(st.get("title", "")), "why": str(st.get("why", "")), "score": st.get("score")})
+        if len(ok) >= n:
+            break
+    return sorted(ok, key=lambda x: x["start"])
+
+
+def long_find(src, cfg, opts=None, n=10, say=print, should_stop=None):
+    """Целое видео (файл или ссылка YouTube) → n лучших моментов в очередь слева, как «Нарезать стрим» в DOTA.
+    Человек сам смотрит каждый, вписывает главные слова (Claude уже предложил свои) и монтирует нужные."""
+    import datetime as dt
+    import highlights as hl
+    o = dict(DEFAULTS, **(cfg.get("blogger") or {}), **(opts or {}))
+    say("открываю видео…")
+    info = hl.source_info(str(src))
+    if not info.get("dur"):
+        raise Stop("не получилось узнать длину видео")
+    say(f"«{info['title'][:60]}», {int(info['dur'] // 60)} мин")
+    if not m.ensure_space(4.0, say, skip_vods=True):
+        raise Stop(f"нет места на диске (свободно {m.free_gb():.1f} ГБ)")
+    wav = hl.get_audio(info, say)
+    say("распознаю речь всего видео (час видео — примерно 10–20 минут)…")
+    words = m.merge_hyphens(transcribe_verbatim(wav, cfg, say, should_stop, vad=True))
+    if len(words) < 30:
+        raise Stop("в видео почти нет речи: истории искать не в чем")
+    say("ищу лучшие моменты…")
+    stories = pick_stories(words, int(n), o.get("story_len") or "short", cfg, say)
+    if not stories:
+        raise Stop("Claude не нашёл подходящих моментов, попробуй другую длину")
+    raw_dir = BASE / "clips" / "raw" / "murchik"
+    now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    made = []
+    for i, st in enumerate(stories):
+        if should_stop and should_stop():
+            raise Stop("остановлено")
+        a, b = st["start"], st["end"]
+        say(f"вырезаю момент {i + 1} из {len(stories)} ({int(a // 60)}:{int(a % 60):02d}, {b - a:.0f} с)")
+        cid = f"blog_{info['id']}_{int(a)}"
+        piece = raw_dir / f"{cid}.mp4"
+        if not hl.cut_video(info, a, b, piece, say):
+            continue
+        real = m.probe(piece)["dur"]
+        pw = [dict(w, s=round(w["s"] - a, 3), e=round(w["e"] - a, 3)) for w in words if a - 0.1 <= w["s"] and w["e"] <= a + real + 0.1]
+        piece.with_suffix(".verb.json").write_text(json.dumps(pw, ensure_ascii=False), encoding="utf-8")
+        p = {"clip_id": cid, "streamer": info.get("channel") or "блогер", "title": st["title"] or info["title"][:60],
+             "format": "talk", "twitch_views": 0, "duration": round(real, 1), "found_at": now,
+             "file": str(piece.relative_to(BASE)), "source": "vod", "score": int(float(st.get("score") or 5) * 10),
+             "reason": st["why"], "hook_words": st["words"], "vod": info.get("url") or info.get("path"), "vod_at": round(a, 1)}
+        with hl.PASSPORTS.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(p, ensure_ascii=False) + "\n")
+        made.append(p)
+    if not made:
+        raise Stop("ни один момент не вырезался")
+    say(f"готово: в очереди слева {len(made)} моментов — смотри и монтируй нужные")
+    return made
+
+
+def long_make(src, cfg, enc, opts=None, n=5, say=print, should_stop=None, on_ready=None):
+    """Целое видео (файл или ссылка YouTube) → n лучших историй, каждая смонтирована в стиле Мурчика."""
+    import highlights as hl
+    o = dict(DEFAULTS, **(cfg.get("blogger") or {}), **(opts or {}))
+    say("открываю видео…")
+    info = hl.source_info(str(src))
+    if not info.get("dur"):
+        raise Stop("не получилось узнать длину видео")
+    say(f"«{info['title'][:60]}», {int(info['dur'] // 60)} мин")
+    if not m.ensure_space(4.0, say, skip_vods=True):
+        raise Stop(f"нет места на диске (свободно {m.free_gb():.1f} ГБ)")
+    wav = hl.get_audio(info, say)
+    say("распознаю речь всего видео (час видео — примерно 10–20 минут)…")
+    words = m.merge_hyphens(transcribe_verbatim(wav, cfg, say, should_stop, vad=True))
+    if len(words) < 30:
+        raise Stop("в видео почти нет речи: истории искать не в чем")
+    say("ищу лучшие истории…")
+    stories = pick_stories(words, int(n), o.get("story_len") or "short", cfg, say)
+    if not stories:
+        raise Stop("Claude не нашёл подходящих историй, попробуй другую длину")
+    say("нашёл историй: " + str(len(stories)) + " — " + "; ".join(f"{s['title']} ({s['end'] - s['start']:.0f} с)" for s in stories)[:300])
+    raw_dir = BASE / "clips" / "raw" / "murchik"
+    outs = []
+    for i, st in enumerate(stories):
+        if should_stop and should_stop():
+            raise Stop("остановлено")
+        a, b = st["start"], st["end"]
+        say(f"история {i + 1} из {len(stories)}: вырезаю ({int(a // 60)}:{int(a % 60):02d}, {b - a:.0f} с)")
+        piece = raw_dir / f"{info['id']}_{int(a)}.mp4"
+        if not hl.cut_video(info, a, b, piece, say):
+            say(f"история {i + 1}: не вырезалась, пропускаю")
+            continue
+        real = m.probe(piece)["dur"]
+        pw = [dict(w, s=round(w["s"] - a, 3), e=round(w["e"] - a, 3)) for w in words if a - 0.1 <= w["s"] and w["e"] <= a + real + 0.1]
+        piece.with_suffix(".verb.json").write_text(json.dumps(pw, ensure_ascii=False), encoding="utf-8")
+        one = dict(o, hook_text=" ".join(st["words"]) if (o.get("auto_words", True) and st["words"]) else o.get("hook_text", ""))
+        out, meta = make(piece, cfg, enc, one, say=lambda t, i=i: say(f"история {i + 1} из {len(stories)}: {t}"))
+        meta.update(title=st["title"], why=st["why"], story_at=round(a, 1), source=info.get("url") or info.get("path"))
+        outs.append((out, meta))
+        if on_ready:
+            on_ready(out, meta)
+    if not outs:
+        raise Stop("ни одна история не смонтировалась")
+    return outs
+
+
 # ---------- субтитры ----------
 def _t(x):
     return m.ass_time(max(0.0, x))
 
 
 def _clean(t):
-    return str(t).replace("{", "(").replace("}", ")").replace("\\", "")
+    """Слово для экрана: без запятых, точек и кавычек по краям (с ними субтитры выглядят хуже)."""
+    t = str(t).replace("{", "(").replace("}", ")").replace("\\", "")
+    return re.sub(r"^[«»\"'(\[]+|[.,!?;:…»\"')\]]+$", "", t).strip() or t.strip()
 
 
 def write_ass(path, hook, hook_end, rest, accents, hook_face, subf, palette="red_white"):
@@ -652,15 +888,20 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
     inputs = ["-i", str(src), "-loop", "1", "-i", str(mask)]
     mix, idx = ["[voice]"], 2
     ck = click_file(o.get("click", "mouse") if o.get("clicks", True) else "none")
-    if ck and hook:
-        vol = max(0.0, min(2.0, float(o.get("click_vol", 70)) / 100))
-        for j, w in enumerate(hook):
-            inputs += ["-i", str(ck)]
-            d = int(max(0.0, w["s"] - 0.02) * 1000)
-            fc.append(f"[{idx}:a]aformat=sample_rates=48000:channel_layouts=stereo,atrim=0:0.6,adelay={d}|{d},"
-                      f"volume={vol:.2f}[ck{j}]")
+    vol = max(0.0, min(2.0, float(o.get("click_vol", 70)) / 100))
+    times = [(w["s"], vol) for w in hook]
+    if o.get("accent_clicks", True):                 # красные слова в обычных субтитрах тоже со щелчком
+        times += [(rest[i]["s"], vol * 0.85) for i in sorted(acc) if 0 <= i < len(rest)]
+    if ck and times:
+        inputs += ["-i", str(ck)]
+        k = len(times)
+        fc.append(f"[{idx}:a]aformat=sample_rates=48000:channel_layouts=stereo,atrim=0:0.6,asplit={k}"
+                  + "".join(f"[cs{j}]" for j in range(k)))
+        for j, (t_, v_) in enumerate(times):
+            d = int(max(0.0, t_ - 0.02) * 1000)
+            fc.append(f"[cs{j}]adelay={d}|{d},volume={v_:.2f}[ck{j}]")
             mix.append(f"[ck{j}]")
-            idx += 1
+        idx += 1
     if mp:
         ss = music_start(mp)
         inputs += ["-stream_loop", "-1", "-ss", f"{ss:.1f}", "-i", str(mp)]

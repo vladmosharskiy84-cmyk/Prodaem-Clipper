@@ -134,7 +134,7 @@ def profile_dirs():
     out = [("", CODE)]
     order = {"us": 0, "dota": 1, "murchik": 2}
     for d in sorted(CODE.parent.glob(CODE.name + "_*"), key=lambda x: (order.get(x.name.rsplit("_", 1)[-1].lower(), 9), x.name)):
-        if d.is_dir() and (d / "profile.txt").exists() and (d / "montage.json").exists():
+        if d.is_dir() and (d / "profile.txt").exists() and (d / "montage.json").exists() and not (d / "hidden.txt").exists():
             out.append((d.name[len(CODE.name) + 1:].lower(), d))
     return out
 
@@ -187,7 +187,9 @@ def init_data():
             "banners": banners_short(), "banner_use": A.cfg.get("banner_use"),
             "needs_setup": rv.needs_setup() and A.cfg.get("mode") != "blogger", "game": gl or "КС",
             "video_broken": VB_FILE.exists(), "mode": A.cfg.get("mode") or "clips",
-            "can_murchik": not ROLE["child"] and not any(k == "murchik" for k, _ in profile_dirs())}
+            "can_murchik": not ROLE["child"] and A.cfg.get("mode") != "blogger" and not any(k == "murchik" for k, _ in profile_dirs()),
+            "blog_keys": A.cfg.get("mode") == "blogger" and not m.KEY_FILE.exists(),
+            "no_tg": bool(A.cfg.get("no_tg"))}
 
 
 def _style_key(label):
@@ -375,12 +377,12 @@ def montage_req(d):
     return {"ok": True}
 
 
-def render_lock():
+def render_lock(port=None):
     """Замок на весь компьютер: пока монтируется ролик одного профиля, другой ждёт.
     Это занятый сетевой порт: если программа упадёт, Windows сама его освободит."""
     s = socket.socket()
     try:
-        s.bind(("127.0.0.1", RENDER_LOCK_PORT))
+        s.bind(("127.0.0.1", port or RENDER_LOCK_PORT))
         s.listen(1)
         return s
     except OSError:
@@ -400,11 +402,17 @@ def run_blog(job, j):
         with A.lock:
             if j:
                 j["stage"] = t[:140]
+    if job.get("long"):                          # целое видео: лучшие моменты встают в очередь слева
+        made = blogger.long_find(job["src"], A.cfg, job["opts"], n=job.get("n", 10), say=say,
+                                 should_stop=lambda: CANCEL["flag"])
+        job["note"] = f"готово: {len(made)} моментов в очереди слева"
+        A.refresh()
+        return BASE / made[0]["file"]
     out, meta = blogger.make(job["src"], A.cfg, A.enc, job["opts"], say=say)
     sent = False
     if job["opts"].get("tg", True):
         say("отправляю в Telegram…")
-        cap = "🎬 Монтаж блогера\n" + (f"Крючок: {meta['hook']}\n" if meta.get("hook") else "") + \
+        cap = f"🎬 {job.get('title') or 'Монтаж блогера'}\n" + (f"Главные слова: {meta['hook']}\n" if meta.get("hook") else "") + \
               (f"Музыка: {Path(str(meta['music'])).name}\n" if meta.get("music") else "") + f"{meta['duration']:.0f} с"
         sent = blogger.tg_send(out, cap)
     Path(out).with_suffix(".json").write_text(json.dumps(dict(meta, tg_sent=sent), ensure_ascii=False, indent=1),
@@ -441,29 +449,79 @@ def blog_req(d):
     if act == "add_music":
         added = blogger.add_music(ask_files("audio"))
         return {"music": blogger.music_list(), "added": added}
+    if act == "open_ready":                      # папка с готовыми роликами Мурчика
+        blogger.OUT_DIR.mkdir(parents=True, exist_ok=True)
+        open_path(blogger.OUT_DIR)
+        return {"ok": True}
     if act == "open_music":
         blogger.MUSIC_DIR.mkdir(parents=True, exist_ok=True)
         open_path(blogger.MUSIC_DIR)
         return {"ok": True}
     if act == "start":
         files = [f for f in d.get("files") or [] if Path(f).exists()]
+        url = str(d.get("url") or "").strip()
+        if url:
+            if not re.match(r"https?://", url):
+                return {"error": "Вставь ссылку на видео (YouTube и т.п.)"}
+            files = [url]
         if not files:
             return {"error": "Выбери видео"}
-        opts = {k: d[k] for k in ("music", "music_db", "hook_words", "hook_font", "hook_text", "hook_caps", "hook_case", "hook_palette", "cut_fillers", "click", "click_vol", "bw", "cut_pauses", "tg",
+        if A.cfg.get("no_tg"):
+            d["tg"] = False
+        opts = {k: d[k] for k in ("music", "music_db", "hook_words", "hook_font", "hook_text", "hook_caps", "hook_case",
+                                  "hook_palette", "cut_fillers", "story_len", "stories", "click", "click_vol", "bw", "cut_pauses", "tg",
                                   "max_gap") if k in d}
         BLOG_CFG.write_text(json.dumps(opts, ensure_ascii=False), encoding="utf-8")
+        n_long = 0
         for f in files:
             jid = secrets.token_hex(4)
-            name = Path(f).stem[:40]
+            is_url = bool(re.match(r"https?://", str(f)))
+            try:
+                long_ = is_url or m.probe(f)["dur"] > float(A.cfg.get("blog_long_sec", 180))
+            except Exception:
+                long_ = False
+            n_long += long_
+            if not long_:                        # короткое видео: в очередь слева, монтируешь сам после выбора слов
+                rv.add_own(A.st, f)
+                continue
+            name = (re.sub(r"^https?://(www\.)?", "", f)[:40] if is_url else Path(f).stem[:40])
             with A.lock:
-                A.job_list.append({"id": jid, "streamer": "Блогер", "title": name, "fmt": name, "style": "Вальдемар",
+                A.job_list.append({"id": jid, "streamer": "Целое видео" if long_ else "Блогер", "title": name, "fmt": name,
+                                   "style": f"ищу {int(opts.get('stories') or 10)} моментов" if long_ else "Вальдемар",
                                    "state": "wait", "stage": "ждёт своей очереди", "start": None, "end": None,
                                    "out": None, "blog": True})
                 A.job_list = A.job_list[-30:]
-            A.jobs.put({"blog": True, "jid": jid, "src": f, "opts": dict(opts),
+            A.jobs.put({"blog": True, "jid": jid, "src": f, "opts": dict(opts), "long": long_, "n": int(opts.get("stories") or 10),
                         "clip": {"clip_id": "blog_" + jid, "title": name, "streamer": "блогер"}, "streamer": "блогер"})
         A.refresh()
-        return {"ok": True, "n": len(files)}
+        A.refresh()
+        return {"ok": True, "n": len(files), "long": n_long, "queued": len(files) - n_long}
+    if act == "clip_info":                       # что Claude предложил для этого момента
+        try:
+            p = A.item(d.get("id"))
+        except KeyError:
+            return {}
+        return {"hook_words": p.get("hook_words") or [], "reason": p.get("reason", ""), "title": p.get("title", "")}
+    if act == "montage":                         # выбранный момент из очереди → монтаж в стиле Мурчика
+        p = A.item(d["id"])
+        if A.cfg.get("no_tg"):
+            d["tg"] = False
+        opts = {k: d[k] for k in ("music", "music_db", "hook_words", "hook_font", "hook_text", "hook_case", "hook_palette",
+                                  "cut_fillers", "click", "click_vol", "bw", "cut_pauses", "tg", "max_gap") if k in d}
+        BLOG_CFG.write_text(json.dumps(dict(saved, **{k: v for k, v in opts.items() if k != "hook_text"}), ensure_ascii=False),
+                            encoding="utf-8")
+        jid = secrets.token_hex(4)
+        with A.lock:
+            A.job_list.append({"id": jid, "streamer": "Мурчик", "title": p.get("title", ""), "fmt": p.get("title", "")[:40],
+                               "style": opts.get("hook_text") or "Вальдемар", "state": "wait", "stage": "ждёт своей очереди",
+                               "start": None, "end": None, "out": None, "blog": True})
+            A.job_list = A.job_list[-30:]
+            A.st["clips"][p["clip_id"]] = "queued"
+            rv.save_state(A.st)
+        A.jobs.put({"blog": True, "jid": jid, "src": p["file"], "opts": opts, "cid": p["clip_id"], "title": p.get("title", ""),
+                    "clip": {"clip_id": p["clip_id"], "title": p.get("title", ""), "streamer": "блогер"}, "streamer": "блогер"})
+        A.refresh()
+        return {"ok": True}
     if act == "make_murchik":
         return make_murchik()
     return {"error": "нет такой команды"}
@@ -602,14 +660,16 @@ def worker():
         if job["jid"] in CANCEL["gone"]:
             continue
         CANCEL.update(jid=job["jid"], flag=False, procs=set())
-        lock = render_lock()
-        while lock is None:                      # монтируется ролик другого профиля
+        # монтаж блогера (Мурчик) идёт своей очередью и не ждёт клипы СНГ/DOTA, и наоборот
+        lport = RENDER_LOCK_PORT + 1 if job.get("blog") else RENDER_LOCK_PORT
+        lock = render_lock(lport)
+        while lock is None:                      # монтируется ролик другого профиля того же вида
             if j:
-                j["stage"] = "ждёт: монтируется ролик другого профиля"
+                j["stage"] = "ждёт: монтируется другой ролик блогера" if job.get("blog") else "ждёт: монтируется ролик другого профиля"
             if CANCEL["flag"]:
                 break
             time.sleep(2)
-            lock = render_lock()
+            lock = render_lock(lport)
         if CANCEL["flag"]:
             if lock:
                 lock.close()
@@ -664,7 +724,7 @@ def worker():
         ok = bool(out)
         dropped = not ok and (job.get("agents") or {}).get("decision") == "reject"   # судья: неактуально
         with A.lock:
-            if not job.get("blog"):
+            if not job.get("blog") or job.get("cid"):
                 A.st["clips"][job["clip"]["clip_id"]] = "done" if ok else ("skipped" if dropped else "retry")
             rv.save_state(A.st)
             if ok:
@@ -678,6 +738,8 @@ def worker():
                 except Exception:
                     pass
                 stage = ("готово" + (" · отправлено в Telegram" if sent else "")) if ok else (err or "не получилось")[:140]
+                if ok and job.get("note"):
+                    stage = job["note"]
                 ag = job.get("agents")
                 if ag and (ok or dropped):       # что решили критик, судья и продюсер
                     pl = ag.get("plan") or {}
@@ -1019,12 +1081,41 @@ def settings(d):
         k, v = d.get("kind"), d.get("values") or []
         ok, text = {"twitch": rv.check_twitch, "claude": rv.check_claude, "telegram": rv.check_telegram}[k](*v)
         return {"ok": ok, "text": text}
+    if act == "tabs":                            # какие вкладки профилей показывать (скрытые не запускаются)
+        out = []
+        for pd in sorted(CODE.parent.glob(CODE.name + "_*")):
+            if pd.is_dir() and (pd / "profile.txt").exists() and (pd / "montage.json").exists():
+                key = pd.name[len(CODE.name) + 1:].lower()
+                out.append({"key": key, "label": profile_label(key, pd), "shown": not (pd / "hidden.txt").exists()})
+        return {"tabs": out}
+    if act == "tab_set":
+        if not re.fullmatch(r"[a-z0-9_-]{1,30}", str(d.get("key") or "")):
+            return {"error": "нет такого профиля"}
+        dd = CODE.parent / f"{CODE.name}_{d.get('key')}"
+        if not (dd / "profile.txt").exists():
+            return {"error": "нет такого профиля"}
+        if d.get("shown"):
+            (dd / "hidden.txt").unlink(missing_ok=True)
+        else:
+            (dd / "hidden.txt").write_text("вкладка скрыта в настройках\n", encoding="utf-8")
+            port = ROLE["children"].pop(d.get("key"), None)
+            if port:                             # профиль больше не нужен: закрываем его, если он ничего не монтирует
+                try:
+                    _post(port, "quit", {}, timeout=5)
+                except Exception:
+                    pass
+        return {"ok": True, "restart": bool(d.get("shown"))}
     if act == "save":
-        if not d.get("cid") or not d.get("sec"):
+        blog = A.cfg.get("mode") == "blogger"
+        if blog and not (d.get("claude") or "").strip():
+            return {"error": "Без ключа Claude Мурчик не найдёт моменты и не исправит субтитры: вставь ключ."}
+        if not blog and (not d.get("cid") or not d.get("sec")):
             return {"error": "Без ключей Twitch клипы не ищутся: заполни оба поля."}
-        rv.save_keys(d["cid"].strip(), d["sec"].strip(), (d.get("claude") or "").strip(), (d.get("tg") or "").strip())
+        rv.save_keys((d.get("cid") or "").strip(), (d.get("sec") or "").strip(), (d.get("claude") or "").strip(),
+                     (d.get("tg") or "").strip())
         A.toast("Ключи сохранены")
-        find_clips()
+        if not blog:
+            find_clips()
         return {"ok": True}
     return {}
 

@@ -306,7 +306,8 @@ body.leaving .app{opacity:0;transform:scale(.985);transition:opacity .35s,transf
 .sr input{height:34px;font-size:13px}
 .sr button{height:28px;width:28px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--mut);cursor:pointer}
 @media (max-width:900px){.edgrid{grid-template-columns:1fr}}
-.blogmode .queue,.blogmode .editor,.blogmode .side>section:first-child{display:none}
+.blogmode .side>section:first-child,.blogmode .editor>:not(.ph):not(.stagewrap):not(.player):not(.acts):not(.blogset){display:none}
+.blogset{display:flex;flex-direction:column;gap:14px}.blogmode #ov{display:none}.blogmode .stage{cursor:default;pointer-events:none}.drop.sm{padding:18px 12px}.drop.sm b{font-size:14px}.drop.sm span{font-size:12px}
 .blogmain{grid-column:1/3;display:flex;flex-direction:column;gap:14px}
 .drop{border:2px dashed var(--line);border-radius:18px;padding:46px 20px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;cursor:pointer;transition:border-color .25s,background .25s}
 .drop svg{width:44px;height:44px;color:var(--mut)}.drop b{font-size:17px}.drop span{color:var(--mut);font-size:13px}.drop em{font-style:normal;color:var(--a2);font-size:13px;min-height:16px}
@@ -442,7 +443,7 @@ const S={init:null,items:[],cur:null,clip:null,fmt:"talk",rects:[],content:null,
   $("#chips").innerHTML=d.formats.map(f=>`<button class="chip" data-f="${f.key}" title="${esc(f.full)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${ICONS[f.key]}</svg><span>${esc(f.label)}</span></button>`).join("");
   $$("#chips .chip").forEach(c=>c.onclick=()=>setFmt(c.dataset.f,true));
   S.style=d.style||"classic";S.font=d.font||"";S.banner=d.banner_use;S.anim=d.anim||"karaoke";$("#zoom").checked=d.zoom!==false;$("#teaser").checked=d.teaser!==false;S.videoBroken=!!d.video_broken;
-  if(d.mode==="blogger"){blogMode();poll();return}
+  if(d.mode==="blogger"){await blogMode();poll();if(d.blog_keys)setTimeout(openSettings,500);return}
   loadFontPreviews();buildMenus();await loadQueue(true);poll();
   if(d.needs_setup)setTimeout(openSettings,500);
 })();
@@ -650,7 +651,7 @@ async function poll(){let d;
     else if(ev.kind==="pvideo")onPvideo(ev);}
   if(reload||d.queue_ver!==S.qver)loadQueue();
   renderJobs(d);
-  const fb=$("#find");fb.querySelector("span").textContent=d.finding?"Ищу клипы…":"Найти новые клипы";fb.classList.toggle("on",d.finding);
+  const fb=$("#find");if(fb){fb.querySelector("span").textContent=d.finding?"Ищу клипы…":"Найти новые клипы";fb.classList.toggle("on",d.finding);}
   if(d.upd==="ready"&&!S.updReady){S.updReady=true;$("#upd").innerHTML='<span class="dot"></span>Установить обновление';}
   setTimeout(poll,600);}
 function onPreview(ev){donePreview();if(ev.error){$("#pvnote").textContent=ev.error;$("#pvnote").className="note warn";return}
@@ -671,6 +672,8 @@ function renderJobs(d){const c=[];c.push(`<span class="cnt">ждут: ${d.wait}<
     el.className="job "+j.state;el.querySelector("b").textContent=j.streamer+" · "+j.fmt;el.querySelector(".top span").textContent=j.style+(j.sec?" · "+m_s(j.sec):"");
     el.querySelector(".st").textContent=j.stage;el.title=j.state==="done"&&j.out?"Открыть папку с роликом":j.stage;
     el.onclick=j.state==="done"&&j.out?()=>api("open_out",{path:j.out}):null;
+    let fb2=el.querySelector(".folderv");if(j.state==="done"&&j.out&&!fb2){fb2=document.createElement("button");fb2.className="btn sm folderv";
+      fb2.textContent="📁 Показать в папке";fb2.style.margin="6px 6px 0 0";fb2.onclick=e=>{e.stopPropagation();api("open_out",{path:j.out});};el.appendChild(fb2);}
     let eb=el.querySelector(".editv");if(j.state==="done"&&j.out&&!eb&&!j.blog){eb=document.createElement("button");eb.className="btn sm editv";eb.textContent="✏️ Править";
       eb.style.marginTop="6px";eb.onclick=e=>{e.stopPropagation();openEditor(j.out);};el.appendChild(eb);}
     let sb=el.querySelector(".stopv");if(j.vod&&j.state==="run"&&!sb){sb=document.createElement("button");sb.className="btn sm stopv";sb.textContent="Остановить нарезку";
@@ -722,6 +725,17 @@ async function openSettings(){const v=await api("settings",{act:"get"});
       <div class="flex"><button class="btn sm" id="s_murchik">Создать профиль «Мурчик»</button></div></div>`:""}
     <div class="flex"><button class="btn small-primary" id="s_save">Сохранить</button><span class="res bad" id="s_msg"></span></div>`,"narrow");
   const mb=w.querySelector("#s_murchik");if(mb)mb.onclick=()=>makeMurchik(mb);
+  if(S.init&&S.init.no_tg){const tg=w.querySelector("#s_tg");if(tg)tg.closest(".sect").remove();const tp=w.querySelector("#s_topics");if(tp)tp.closest(".sect").remove();}
+  if(S.init&&S.init.mode!=="blogger"&&!S.init.profile){(async()=>{const t=await api("settings",{act:"tabs"});if(!(t.tabs||[]).length)return;
+    const box=document.createElement("div");box.className="sect";box.innerHTML=`<h4>Вкладки профилей</h4><p>Сними галочку, и вкладка пропадёт, а профиль перестанет работать в фоне. Все его данные остаются в папке, вернуть можно здесь же.</p>`+
+      t.tabs.map(x=>`<label class="note" style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" data-tab="${esc(x.key)}" ${x.shown?"checked":""}> ${esc(x.label)}</label>`).join("");
+    const save=w.querySelector("#s_save").parentElement;save.parentElement.insertBefore(box,save);
+    box.querySelectorAll("[data-tab]").forEach(c=>c.onchange=async()=>{const r=await api("settings",{act:"tab_set",key:c.dataset.tab,shown:c.checked});
+      if(r.error)return toast(r.error,false);toast(c.checked?"Вкладка вернётся после перезапуска программы":"Вкладка скрыта — обнови окно (F5)");});})();}
+  if(S.init&&S.init.mode==="blogger"){                 /* Мурчик: Twitch не нужен, Claude обязателен */
+    const tw=w.querySelector("#s_cid");if(tw)tw.closest(".sect").remove();
+    w.querySelector(".sub").textContent="Мурчику нужен ключ Claude (обязательно) и бот Telegram (по желанию: туда приходят готовые ролики).";
+    const ch=w.querySelector("#s_claude");if(ch)ch.closest(".sect").querySelector("h4").textContent="Claude (обязательно)";}
   const vals={twitch:["cid","sec"],claude:["claude"],telegram:["tg"]};
   w.querySelectorAll("[data-check]").forEach(b=>b.onclick=async()=>{const id=b.dataset.check,res=w.querySelector("#r_"+id),vs=vals[id].map(k=>w.querySelector("#s_"+k).value.trim());
     if(vs.some(x=>!x)){res.className="res bad";res.textContent="сначала заполни поле";return}res.className="res";res.innerHTML='<span class="spin"></span>';
@@ -765,67 +779,86 @@ $("#vodbtn").onclick=()=>{const w=modal(`<h3>Нарезать стрим</h3><p 
 async function blogMode(){
   document.body.classList.add("blogmode");
   const r0=await api("blog",{act:"init"});const sv=r0.saved||{};
-  const sec=document.createElement("section");sec.className="panel blogmain";
-  sec.innerHTML=`<div class="ph"><h2>Мурчик · монтаж блогера</h2><span id="bl_fonts"></span></div>
-    <div class="drop" id="bl_drop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
-      <b>Перетащи сюда видео</b><span>или нажми, чтобы выбрать. Можно сразу несколько: монтаж начнётся сам</span><em id="bl_up"></em></div>
-    <div class="bgrid2">
-      <div><p class="label">Музыка</p><div class="flex"><select class="inp" id="bl_mus"></select></div>
-        <div class="flex" style="margin-top:8px"><button class="btn sm" id="bl_addm">Добавить музыку…</button><button class="btn sm" id="bl_openm">Папка с музыкой</button></div>
-        <p class="label" style="margin-top:14px">Громкость музыки <span id="bl_dbv" class="note"></span></p><input type="range" id="bl_db" min="-32" max="-8" step="1" style="width:100%"></div>
-      <div><p class="label">Звук щелчка под крючком</p><div class="flex"><select class="inp" id="bl_ck"></select><button class="btn sm" id="bl_play" title="Послушать">▶</button></div>
-        <div class="flex" style="margin-top:8px"><button class="btn sm" id="bl_adds">Добавить свой звук…</button></div>
-        <p class="label" style="margin-top:14px">Громкость щелчков <span id="bl_cvv" class="note"></span></p><input type="range" id="bl_cv" min="0" max="150" step="5" style="width:100%"></div>
-    </div>
-    <div><p class="label">Шрифт главных слов (крючка)</p><div class="flex"><select class="inp" id="bl_hf" style="height:42px;max-width:420px"></select><button class="btn sm" id="bl_addf">Добавить шрифт…</button></div>
-      <p class="note" style="text-align:left;margin:6px 0 0">Например Mozart: выбери его файл .ttf или .otf. Важно, чтобы в шрифте были русские буквы — программа проверит.</p></div>
-    <div><p class="label">Главные слова (крючок)</p>
-      <div class="flex"><input class="inp" id="bl_ht" placeholder="Главные слова этого ролика, например: Бокс Спорт Связи" autocomplete="off" style="flex:1">
+  /* слева: очередь моментов + добавление видео */
+  $(".qbtns").innerHTML=`<div class="drop sm" id="bl_drop"><b>Перетащи видео сюда</b><span>или нажми, чтобы выбрать. Длинное (больше 3 минут) — найду лучшие моменты, короткое встанет в очередь целиком</span><em id="bl_up"></em></div>
+    <button class="btn" id="bl_yt" style="--k:#e8321f">Целое видео с YouTube…</button>
+    <button class="btn" id="bl_ready">📁 Готовые ролики</button>`;
+  $("#list").innerHTML='<div class="empty">Очередь пуста.<br>Кинь видео или ссылку с YouTube — здесь появятся лучшие моменты.</div>';
+  /* в центре: плеер + настройки Мурчика вместо рамок и форматов */
+  const sec=document.createElement("div");sec.className="blogset";
+  sec.innerHTML=`<div><p class="label">Главные слова (первые 3–4 слова ролика) <span class="note" id="bl_sugg"></span></p>
+      <div class="flex"><input class="inp" id="bl_ht" placeholder="Например: Бокс Спорт Связи. Пусто — возьмутся первые сказанные слова" autocomplete="off" style="flex:1">
         <select class="inp" id="bl_case" style="height:42px;width:auto"><option value="title">С большой буквы</option><option value="caps">ЗАГЛАВНЫМИ</option><option value="as_is">как вписал</option></select>
-        <select class="inp" id="bl_pal" style="height:42px;width:auto"><option value="red_white">красный / белый</option><option value="red">только красный</option><option value="red_yellow">красный / жёлтый</option></select></div>
-      <p class="note" style="text-align:left;margin:6px 0 0">Например «Бокс Спорт Связи». Каждое слово — своя строка лесенкой, появляется со щелчком, через ~2 секунды все уходят и идут обычные субтитры. Пусто — берутся первые 3–4 сказанных слова. Поле срабатывает для следующего перетащенного видео и очищается.</p></div>
-    <div class="flex" style="flex-wrap:wrap;gap:16px;margin-top:6px">
-      <label class="note" style="display:flex;gap:8px;align-items:center">Крючок <select class="inp" id="bl_hw" style="height:36px;width:auto"><option value="0">авто (3–4 слова)</option><option value="3">3 слова</option><option value="4">4 слова</option></select></label>
-      <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="bl_fill"> вырезать «э», «мм», паразиты и запинки</label>
-      <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="bl_tg"> отправлять в Telegram</label></div>
-    <p class="note" style="text-align:left;margin-top:12px">Стиль один для всех роликов: ч/б карточка на чёрном, паузы вырезаны, первые 3–4 слова — крючок курсивом со щелчками,
-      дальше субтитры по слову, смысловые слова красным, музыка тише голоса и прячется, когда он говорит. Готовые — в панели «Монтаж» справа и в папке clips\\ready\\blogger.</p>`;
-  $(".grid").insertBefore(sec,$(".side"));
-  const q=x=>sec.querySelector(x);
+        <select class="inp" id="bl_pal" style="height:42px;width:auto"><option value="red_white">красный / белый</option><option value="red">только красный</option><option value="red_yellow">красный / жёлтый</option></select></div></div>
+    <div class="bgrid2">
+      <div><p class="label">Музыка</p><div class="flex"><select class="inp" id="bl_mus"></select><button class="btn sm" id="bl_addm" title="Добавить музыку">+</button><button class="btn sm" id="bl_openm" title="Папка с музыкой">📁</button></div>
+        <p class="label" style="margin-top:10px">Громкость музыки <span id="bl_dbv" class="note"></span></p><input type="range" id="bl_db" min="-32" max="-8" step="1" style="width:100%"></div>
+      <div><p class="label">Щелчок (главные слова и красные слова)</p><div class="flex"><select class="inp" id="bl_ck"></select><button class="btn sm" id="bl_play" title="Послушать">▶</button><button class="btn sm" id="bl_adds" title="Добавить свой звук">+</button></div>
+        <p class="label" style="margin-top:10px">Громкость щелчков <span id="bl_cvv" class="note"></span></p><input type="range" id="bl_cv" min="0" max="150" step="5" style="width:100%"></div>
+    </div>
+    <div class="flex" style="flex-wrap:wrap;gap:14px">
+      <label class="note" style="display:flex;gap:8px;align-items:center">Шрифт главных слов <select class="inp" id="bl_hf" style="height:36px;width:auto;max-width:240px"></select><button class="btn sm" id="bl_addf">+ шрифт</button></label>
+      <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="bl_fill"> вырезать «э», «мм», паразиты</label>
+      <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="bl_tg"> в Telegram</label></div>`;
+  $(".editor").insertBefore(sec,$(".editor .acts"));
+  $("#cliptitle").textContent="Момент";
+  const q=x=>document.querySelector(x);
   const fillMus=(list,sel)=>{q("#bl_mus").innerHTML=`<option value="">Без музыки</option>`+list.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("");
     q("#bl_mus").value=(sel!=null&&list.includes(sel))?sel:(sel===""?"":(list[0]||""));};
   const fillSnd=(list,sel)=>{q("#bl_ck").innerHTML=list.map(([k,v])=>`<option value="${esc(k)}">${esc(v)}</option>`).join("");q("#bl_ck").value=list.some(x=>x[0]===sel)?sel:"mouse";};
-  const fillF=(list,sel)=>{q("#bl_hf").innerHTML=`<option value="">Авто: ${esc(r0.hook_font)}</option>`+list.map(n=>`<option value="${esc(n)}">${esc(n.replace(/^hook_user_/,"").replace(/\.(ttf|otf)$/i,""))}</option>`).join("");
+  const fillF=(list,sel)=>{q("#bl_hf").innerHTML=`<option value="">${esc(r0.hook_font)}</option>`+list.map(n=>`<option value="${esc(n)}">${esc(n.replace(/^hook_user_/,"").replace(/\.(ttf|otf)$/i,""))}</option>`).join("");
     q("#bl_hf").value=list.includes(sel)?sel:"";};
-  fillF(r0.hook_fonts||[],sv.hook_font||"");
-  q("#bl_addf").onclick=async()=>{const r=await api("blog",{act:"add_font"});if(!r.added)return;
-    if(!r.cyr){toast("В этом шрифте нет русских букв — субтитры им не написать. Нужна версия шрифта с кириллицей.",false);fillF(r.fonts,q("#bl_hf").value);return}
-    fillF(r.fonts,r.added);toast("Шрифт добавлен");};
-  fillMus(r0.music||[],sv.music??null);fillSnd(r0.sounds||[],sv.click||"mouse");
-  q("#bl_db").value=sv.music_db??-20;q("#bl_cv").value=sv.click_vol??70;q("#bl_hw").value=String(sv.hook_words||0);q("#bl_case").value=sv.hook_case||"title";q("#bl_pal").value=sv.hook_palette||"red_white";q("#bl_fill").checked=sv.cut_fillers!==false;q("#bl_tg").checked=sv.tg!==false;
-  const lab=()=>{q("#bl_dbv").textContent=q("#bl_db").value+" дБ";q("#bl_cvv").textContent=q("#bl_cv").value+"%";};lab();
-  q("#bl_db").oninput=lab;q("#bl_cv").oninput=lab;
-  q("#bl_fonts").textContent=r0.corsiva?"крючок: Monotype Corsiva":"крючок: "+r0.hook_font;
-  q("#bl_fonts").title=r0.corsiva?"":"Как у Вальдемара — Monotype Corsiva. Если поставить его в Windows, программа возьмёт его сама.";
+  fillF(r0.hook_fonts||[],sv.hook_font||"");fillMus(r0.music||[],sv.music??null);fillSnd(r0.sounds||[],sv.click||"mouse");
+  q("#bl_db").value=sv.music_db??-20;q("#bl_cv").value=sv.click_vol??70;q("#bl_case").value=sv.hook_case||"title";q("#bl_pal").value=sv.hook_palette||"red_white";
+  q("#bl_fill").checked=sv.cut_fillers!==false;q("#bl_tg").checked=sv.tg!==false;
+  const lab=()=>{q("#bl_dbv").textContent=q("#bl_db").value+" дБ";q("#bl_cvv").textContent=q("#bl_cv").value+"%";};lab();q("#bl_db").oninput=lab;q("#bl_cv").oninput=lab;
   const opts=()=>({music:q("#bl_mus").value||null,music_db:+q("#bl_db").value,click:q("#bl_ck").value,click_vol:+q("#bl_cv").value,
-    hook_words:+q("#bl_hw").value,hook_font:q("#bl_hf").value||null,hook_text:q("#bl_ht").value.trim(),hook_case:q("#bl_case").value,hook_palette:q("#bl_pal").value,cut_fillers:q("#bl_fill").checked,tg:q("#bl_tg").checked,bw:true,cut_pauses:true});
-  const start=async files=>{if(!files.length)return;const r=await api("blog",Object.assign({act:"start",files},opts()));
-    if(r.error)return toast(r.error,false);toast(`В монтаж: ${r.n}`);q("#bl_ht").value="";};
+    hook_font:q("#bl_hf").value||null,hook_text:q("#bl_ht").value.trim(),hook_case:q("#bl_case").value,hook_palette:q("#bl_pal").value,
+    cut_fillers:q("#bl_fill").checked,tg:q("#bl_tg").checked,bw:true,cut_pauses:true});
+  q("#bl_addf").onclick=async()=>{const r=await api("blog",{act:"add_font"});if(!r.added)return;
+    if(!r.cyr){toast("В этом шрифте нет русских букв — им не написать по-русски. Нужна версия с кириллицей.",false);fillF(r.fonts,q("#bl_hf").value);return}
+    fillF(r.fonts,r.added);toast("Шрифт добавлен");};
   q("#bl_addm").onclick=async()=>{const r=await api("blog",{act:"add_music"});if(r.music){fillMus(r.music,(r.added||[])[0]||q("#bl_mus").value);if((r.added||[]).length)toast("Музыка добавлена");}};
   q("#bl_openm").onclick=()=>api("blog",{act:"open_music"});
   q("#bl_adds").onclick=async()=>{const r=await api("blog",{act:"add_sound"});if(r.sounds){fillSnd(r.sounds,(r.added||[])[0]||q("#bl_ck").value);if((r.added||[]).length)toast("Звук добавлен");}};
   q("#bl_play").onclick=()=>api("blog",{act:"test_sound",name:q("#bl_ck").value});
+  q("#bl_ready").onclick=()=>api("blog",{act:"open_ready"});
+  if(S.init.no_tg){q("#bl_tg").checked=false;q("#bl_tg").closest("label").remove();}
+  /* монтаж выбранного момента */
+  $("#go").onclick=async()=>{if(!S.clip)return;vid.pause();const r=await api("blog",Object.assign({act:"montage",id:S.cur},opts()));
+    if(r.error)return toast(r.error,false);toast("В монтаж"+(q("#bl_ht").value.trim()?": «"+q("#bl_ht").value.trim()+"»":"")+". Бери следующий момент");};
+  /* при выборе момента подставляем главные слова, которые предложил Claude */
+  schedulePreview=()=>{};                           /* пример кадра с баннером здесь не нужен */
+  const orig=openClip;openClip=async id=>{await orig(id);if(S.cur!==id)return;const c=await api("blog",{act:"clip_info",id});
+    const w=(c.hook_words||[]).join(" ");q("#bl_ht").value=w;q("#bl_sugg").textContent=w?"· Claude предложил, можно поменять":"";
+    hint(c.reason?"Почему этот момент: "+c.reason:"");};
+  /* добавление видео */
+  const start=async(body)=>{const r=await api("blog",Object.assign({act:"start"},body,{stories:+(sv.stories||10),story_len:sv.story_len||"short"}));
+    if(r.error)return toast(r.error,false);
+    toast(r.long?"Ищу лучшие моменты — ход в панели «Монтаж», они появятся в очереди слева":`В очереди: ${r.queued}`);};
   const dz=q("#bl_drop"),up=q("#bl_up");
-  dz.onclick=async()=>{const r=await api("blog",{act:"pick"});start(r.files||[]);};
-  ["dragenter","dragover"].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.add("on");}));
-  ["dragleave","drop"].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.remove("on");}));
-  addEventListener("dragover",e=>e.preventDefault());addEventListener("drop",e=>{if(!dz.contains(e.target))e.preventDefault();});
-  dz.addEventListener("drop",async ev=>{const fs=[...ev.dataTransfer.files].filter(f=>/\.(mp4|mov|mkv|webm|avi|m4v)$/i.test(f.name));
+  dz.onclick=async()=>{const r=await api("blog",{act:"pick"});if((r.files||[]).length)start({files:r.files});};
+  const upload=async fl=>{const fs=[...fl].filter(f=>/\.(mp4|mov|mkv|webm|avi|m4v)$/i.test(f.name));
     if(!fs.length)return toast("Это не видео",false);const paths=[];
     for(const [i,f] of fs.entries()){up.textContent=`загружаю ${i+1} из ${fs.length}: ${f.name}`;
       const r=await fetch(`/upload?name=${encodeURIComponent(f.name)}&k=${K}`,{method:"POST",headers:{"X-Token":K},body:f}).then(x=>x.json()).catch(()=>({}));
       if(r.path)paths.push(r.path);else toast("Не загрузился: "+f.name,false);}
-    up.textContent="";start(paths);});
+    up.textContent="";if(paths.length)start({files:paths});};
+  addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("on");});addEventListener("dragleave",e=>{if(!e.relatedTarget)dz.classList.remove("on");});
+  addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("on");if(e.dataTransfer.files.length)upload(e.dataTransfer.files);});
+  q("#bl_yt").onclick=()=>{const w=modal(`<h3>Целое видео с YouTube</h3><p class="sub">Программа скачает видео, распознает речь, и Claude найдёт законченные моменты:
+      треш-истории (гопнули, ударили, запаковали), про бабки и мотивацию для пацанов. Они встанут в очередь слева — смотришь, вписываешь главные слова и монтируешь нужные.</p>
+      <input class="inp" id="y_url" placeholder="https://youtube.com/watch?v=…" autocomplete="off" style="margin-bottom:10px">
+      <div class="flex" style="margin-bottom:14px"><select class="inp" id="y_n" style="height:42px;width:auto"><option value="5">5 моментов</option><option value="10">10 моментов</option><option value="15">15 моментов</option><option value="20">20 моментов</option></select>
+        <select class="inp" id="y_len" style="height:42px;width:auto"><option value="short">20–40 с (лучше всего)</option><option value="mid">30–60 с</option><option value="long">45–90 с</option></select></div>
+      <div class="flex"><button class="btn small-primary" id="y_go">Найти моменты</button><span class="res bad" id="y_msg"></span></div>`,"narrow");
+    w.querySelector("#y_n").value=String(sv.stories||10);w.querySelector("#y_len").value=sv.story_len||"short";
+    w.querySelector("#y_go").onclick=async()=>{const url=w.querySelector("#y_url").value.trim();if(!url){w.querySelector("#y_msg").textContent="Вставь ссылку";return}
+      sv.stories=+w.querySelector("#y_n").value;sv.story_len=w.querySelector("#y_len").value;
+      const r=await api("blog",{act:"start",url,stories:sv.stories,story_len:sv.story_len});if(r.error){w.querySelector("#y_msg").textContent=r.error;return}
+      toast("Скачиваю и ищу моменты — ход в панели «Монтаж»");w.close();};
+    w.querySelector("#y_url").focus();};
+  await loadQueue(true);
 }
 async function makeMurchik(btn){btn.disabled=true;btn.textContent="Создаю…";const r=await api("blog",{act:"make_murchik"});
   if(r.error){btn.disabled=false;btn.textContent="Создать профиль «Мурчик»";return toast(r.error,false)}location.href=r.url;}

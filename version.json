@@ -1,7 +1,7 @@
 {
-  "version": "2026.10.28 08:26",
-  "time": 1793176006.6669555,
-  "notes": "Мурчик (монтаж блогера): главные слова лесенкой, вырезка «э» и пауз, музыка, щелчки, свой шрифт; стоп монтажа; отчёты в отдельную группу; управление с телефона; порог 6000",
+  "version": "2026.10.31 16:51",
+  "time": 1793465515.293942,
+  "notes": "Скрытие вкладок профилей (US); Мурчик режет только «э/мэ/бэ/мм» и повторы — история не теряется; кнопки «Показать в папке»; сборка без Telegram и со своим ключом",
   "files": {
     "montage.py": "b10cf1f77f39b034ab9df5cfacf8c74a34386bd3aec26c1dc90657f45a838322",
     "review.py": "6ca95618dc79c52ee9b2fd1aca0018e1dec13e8a334222df0ca2b0c58fe48af8",
@@ -9,14 +9,14 @@
     "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
     "clipfinder.py": "1ad5f5af546ab59c59f9e8ef44a4a821c39252d537848b041dc277cde654151b",
     "updater.py": "ab51e41cfcd45d65c46670910037356318a7ea2da66bdfafa9acff13e21b4481",
-    "webapp.py": "8f4020ac31a9ae46c9e4f6befd1451a4772469d9413a704087833eca1f1ef18a",
-    "ui.html": "e8e1803d3f96b0bdd833d8bf42511ac1cd8fb564f2f83ccc666d362087b9cbb2",
+    "webapp.py": "6971d6b2fcd6cc7e47dd5efe97a3805726507b399e7ee04d3f480e106dc5dded",
+    "ui.html": "93bc7a120b44a871eddb2cd2da66528e1b672e78462677d6b1cda2916ad8c36f",
     "logo_src.png": "e43b51bb73da86652be2c2adac971e5b39557d895d84a4c2449e9b99f95c1739",
     "highlights.py": "450eca04d2b1865766bc783091c5c8a153322ad987903cda9bb4f4537427d35e",
     "accounts.py": "6fc93b02487dcb40ef29d91251f3ee13fe5a710fe7ed2287559670ae0ec59be0",
     "agents.py": "33669b96f0e55baa7eb7cbe41f34e6c7db5e0344dfe422a24b5ca9a2c43ba79b",
     "leaders.py": "06951d301f174cb68aed842807048974977038e49ae9439738ac155ab69a7dc1",
     "tgbot.py": "3f1b7305dbb32ee153741b736f2fb3a75a6e168b911d1e57dc51dbabdf2a7619",
-    "blogger.py": "93c20daf236f542ac03e4b0a15cdbfb0965c7cfa3362396d689414f9b14b7730"
+    "blogger.py": "0c262f5f3bee96224f4b4f28239f760336c0889fd6e87ed1b7d2aadf6bfc4494"
   }
 }
