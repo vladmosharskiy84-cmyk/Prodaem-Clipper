@@ -187,6 +187,7 @@ def init_data():
             "banners": banners_short(), "banner_use": A.cfg.get("banner_use"),
             "needs_setup": rv.needs_setup() and A.cfg.get("mode") != "blogger", "game": gl or "КС",
             "video_broken": VB_FILE.exists(), "mode": A.cfg.get("mode") or "clips",
+            "can_dota": not ROLE["child"] and A.cfg.get("mode") != "blogger" and not any(k == "dota" for k, _ in profile_dirs()),
             "can_murchik": not ROLE["child"] and A.cfg.get("mode") != "blogger" and not any(k == "murchik" for k, _ in profile_dirs()),
             "blog_keys": A.cfg.get("mode") == "blogger" and not m.KEY_FILE.exists(),
             "no_tg": bool(A.cfg.get("no_tg"))}
@@ -527,6 +528,8 @@ def blog_req(d):
         return {"ok": True}
     if act == "make_murchik":
         return make_murchik()
+    if act == "make_dota":
+        return make_dota()
     return {"error": "нет такой команды"}
 
 
@@ -558,6 +561,56 @@ def make_murchik():
     port = ROLE["children"]["murchik"]
     A.log("создан профиль «Мурчик»: монтаж блогера")
     return {"ok": True, "url": f"http://127.0.0.1:{port}/?k={TOKEN}"}
+
+
+DOTA_STREAMERS = ["nix", "dyrachyo", "just_ns", "rostislav_999", "travoman", "justcooman", "sclkoma", "dreadztv",
+                  "stray228", "zxcursed", "arthas", "lenagolovach", "gpk", "ramzes", "recrent", "goodwinlive"]
+
+
+def make_dota():
+    """Вкладка DOTA: свой пул дота-стримеров, своя очередь и баннер. Ключи и Telegram — как в главном."""
+    if ROLE["child"]:
+        return {"error": "профиль создаётся из главного окна (СНГ)"}
+    dst = CODE.parent / f"{CODE.name}_dota"
+    dst.mkdir(parents=True, exist_ok=True)
+    (dst / "hidden.txt").unlink(missing_ok=True)
+    for name in ("claude_key.txt", "telegram_token.txt", "telegram_chat.txt", "telegram_topics.json"):
+        if (CODE / name).exists() and not (dst / name).exists():
+            shutil.copy2(CODE / name, dst / name)
+    if not (dst / "config.json").exists():
+        cfg = json.loads((CODE / "config.json").read_text(encoding="utf-8")) if (CODE / "config.json").exists() else {}
+        cfg.update(talk_categories=[], cs_categories=["Dota 2"], min_duration=10)       # только дота
+        (dst / "config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    bn = next((b for b in ("banner_dota.mov", "banner_dota.mp4") if (CODE / b).exists()), None)
+    if bn and not (dst / bn).exists():
+        shutil.copy2(CODE / bn, dst / bn)
+    if not (dst / "montage.json").exists():
+        mj = json.loads((CODE / "montage.json").read_text(encoding="utf-8"))
+        for k in ("mode", "banners", "banner_use", "banner_cs", "banner_talk"):   # баннеры СНГ доте не подходят
+            mj.pop(k, None)
+        mj.update(language="ru", banner_speed=1.4, cams={}, crops={}, min_duration=10, game_label="Дота",
+                  tags="#дота2 #dota2 #стример #twitch #нарезки", banner_cs_blur=0, banner_talk_blur=0)
+        if bn:
+            mj.update(banner_cs=bn, banner_talk=bn, banner_cs_crop=None, banner_talk_crop=None)
+        (dst / "montage.json").write_text(json.dumps(mj, ensure_ascii=False, indent=2), encoding="utf-8")
+    if not (dst / "streamers.txt").exists():
+        (dst / "streamers.txt").write_text("# Пул стримеров: один ник Twitch в строке\n" + "\n".join(DOTA_STREAMERS) + "\n",
+                                           encoding="utf-8")
+    (dst / "satisfying").mkdir(exist_ok=True)
+    (dst / "profile.txt").write_text("DOTA", encoding="utf-8")
+    if "dota" not in ROLE["children"]:           # запускаем профиль сразу, без перезапуска программы
+        port = free_port(SERVER["port"] + 8)
+        ROLE["children"]["dota"] = port
+        env = dict(os.environ, CLIPPER_DATA=str(dst), PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+        subprocess.Popen([sys.executable, str(CODE / "review.py"), "--data", str(dst), "--port", str(port),
+                          "--no-window", "--token", TOKEN, "--parent", str(SERVER["port"])],
+                         cwd=str(dst), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         stdin=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        t0 = time.time()
+        while time.time() - t0 < 20 and not _alive(port):
+            time.sleep(0.3)
+    A.log("создан профиль DOTA" + ("" if bn else ": положи баннер оффера в настройках вкладки DOTA"))
+    return {"ok": True, "url": f"http://127.0.0.1:{ROLE['children']['dota']}/?k={TOKEN}", "banner": bool(bn)}
 
 
 UPLOADS = BASE / "uploads"
