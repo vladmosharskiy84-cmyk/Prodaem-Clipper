@@ -408,11 +408,14 @@ def run_blog(job, j):
         job["note"] = f"готово: {len(made)} моментов в очереди слева"
         A.refresh()
         return BASE / made[0]["file"]
-    out, meta = blogger.make(job["src"], A.cfg, A.enc, job["opts"], say=say)
+    out, meta = blogger.make_checked(job["src"], A.cfg, A.enc, job["opts"], say=say)
+    rv = meta.get("review") or {}
+    job["note"] = (("критик: выкладывать" if rv.get("decision") == "publish" else "критик: брак")
+                   + (f" {rv['score']}/10" if rv.get("score") is not None else "")) if rv else ""
     sent = False
     if job["opts"].get("tg", True):
         say("отправляю в Telegram…")
-        cap = f"🎬 {job.get('title') or 'Монтаж блогера'}\n" + (f"Главные слова: {meta['hook']}\n" if meta.get("hook") else "") + \
+        cap = f"🎬 {job.get('title') or 'Монтаж блогера'}\n" + blogger.review_caption(meta) + (f"Главные слова: {meta['hook']}\n" if meta.get("hook") else "") + \
               (f"Музыка: {Path(str(meta['music'])).name}\n" if meta.get("music") else "") + f"{meta['duration']:.0f} с"
         sent = blogger.tg_send(out, cap)
     Path(out).with_suffix(".json").write_text(json.dumps(dict(meta, tg_sent=sent), ensure_ascii=False, indent=1),

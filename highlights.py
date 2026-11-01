@@ -358,14 +358,51 @@ def cut_video(info, a, b, out, say):
                             "-movflags", "+faststart", str(out)], capture_output=True, text=True, creationflags=NOWIN)
         return r.returncode == 0 and out.exists()
     tmpl = str(out.with_suffix("")) + ".%(ext)s"
-    r = _ytdlp(["-f", "bv*[height<=1080]+ba/b[height<=1080]/b", "--download-sections", f"*{a:.2f}-{b:.2f}",
-                "--force-keyframes-at-cuts", "--merge-output-format", "mp4", "-o", tmpl, info["url"]], timeout=1800)
-    got = [f for f in out.parent.glob(out.stem + ".*") if f.suffix.lower() in (".mp4", ".mkv", ".webm")]
-    if got and got[0] != out:
-        got[0].replace(out)
-    if r.returncode != 0 and not out.exists():
-        say("  не скачался: " + ((r.stderr or "").strip().splitlines() or [""])[-1][:160])
-    return out.exists()
+    # 1) H.264 — его понимает любой ffmpeg; 2) лучшее как раньше; 3) готовый файл со звуком, без перекодирования краёв.
+    # После каждой попытки проверяем, что в куске есть живая картинка: YouTube иногда отдаёт кусок без видео
+    # или в AV1, который не раскодировался, — из такого получался чёрный ролик со звуком.
+    tries = [(["-f", "bv*[vcodec^=avc1][height<=1080]+ba[ext=m4a]/bv*[vcodec^=avc1]+ba"], True),
+             (["-f", "bv*[height<=1080]+ba/b[height<=1080]/b"], True),
+             (["-f", "b[height<=720]/18/b"], False)]
+    last_err = ""
+    for k, (fmt, keyframes) in enumerate(tries, 1):
+        for f in out.parent.glob(out.stem + ".*"):
+            f.unlink(missing_ok=True)
+        r = _ytdlp(fmt + ["--download-sections", f"*{a:.2f}-{b:.2f}"] + (["--force-keyframes-at-cuts"] if keyframes else [])
+                   + ["--merge-output-format", "mp4", "-o", tmpl, info["url"]], timeout=1800)
+        got = [f for f in out.parent.glob(out.stem + ".*") if f.suffix.lower() in (".mp4", ".mkv", ".webm")]
+        if got and got[0] != out:
+            got[0].replace(out)
+        if out.exists() and video_ok(out):
+            return True
+        last_err = ((r.stderr or "").strip().splitlines() or ["картинка не скачалась (чёрный кадр)"])[-1][:160]
+        if k < len(tries):
+            say(f"  кусок без картинки, пробую другой формат ({k + 1}/{len(tries)})…")
+    out.unlink(missing_ok=True)
+    say("  не скачался: " + last_err)
+    return False
+
+
+def video_ok(path) -> bool:
+    """В файле есть видео и оно не чёрное: смотрим яркость трёх кадров (начало, середина, конец)."""
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+                           capture_output=True, text=True, timeout=60, creationflags=NOWIN)
+        dur = float(r.stdout.strip() or 0)
+    except (ValueError, subprocess.SubprocessError):
+        return False
+    if dur <= 0:
+        return False
+    alive = 0
+    for f in (0.15, 0.5, 0.85):
+        r = subprocess.run(["ffmpeg", "-v", "info", "-ss", f"{dur * f:.2f}", "-i", str(path), "-frames:v", "1",
+                            "-vf", "signalstats,metadata=print", "-f", "null", "-"],
+                           capture_output=True, text=True, timeout=60, creationflags=NOWIN)
+        st = {k: float(v) for k, v in re.findall(r"signalstats\.(YAVG|YMIN|YMAX)=([\d.]+)", r.stderr or "")}
+        # чёрный кадр: средняя яркость ~16 и почти нет разброса; тёмная, но живая сцена имеет контраст
+        if st and (st.get("YAVG", 0) >= 22 or st.get("YMAX", 0) - st.get("YMIN", 0) >= 40):
+            alive += 1
+    return alive >= 1
 
 
 def run(src, n=10, cfg=None, say=print, should_stop=lambda: False):

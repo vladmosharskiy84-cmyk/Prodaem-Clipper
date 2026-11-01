@@ -663,7 +663,7 @@ def long_make(src, cfg, enc, opts=None, n=5, say=print, should_stop=None, on_rea
         pw = [dict(w, s=round(w["s"] - a, 3), e=round(w["e"] - a, 3)) for w in words if a - 0.1 <= w["s"] and w["e"] <= a + real + 0.1]
         piece.with_suffix(".verb.json").write_text(json.dumps(pw, ensure_ascii=False), encoding="utf-8")
         one = dict(o, hook_text=" ".join(st["words"]) if (o.get("auto_words", True) and st["words"]) else o.get("hook_text", ""))
-        out, meta = make(piece, cfg, enc, one, say=lambda t, i=i: say(f"история {i + 1} из {len(stories)}: {t}"))
+        out, meta = make_checked(piece, cfg, enc, one, say=lambda t, i=i: say(f"история {i + 1} из {len(stories)}: {t}"))
         meta.update(title=st["title"], why=st["why"], story_at=round(a, 1), source=info.get("url") or info.get("path"))
         outs.append((out, meta))
         if on_ready:
@@ -746,8 +746,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         acc = i in accents
         col = SUB_RED if acc else WHITE
         sc = 110 if acc else 100
+        word = _clean(w["t"])
+        prev = str(rest[i - 1]["t"]).strip() if i else "."
+        # Whisper пишет с большой буквы начало фразы («Подиви», «Девочек») — на экране это выглядит случайно
+        if prev[-1:] and prev[-1:] in ".!?…" and len(word) > 1 and word[0].isupper() and word[1:].islower():
+            word = word[0].lower() + word[1:]
         ev.append(f"Dialogue: 0,{_t(st)},{_t(en)},Sub,,0,0,0,,{{\\an5\\pos({W // 2},{SUB_Y})\\bord6\\blur9\\3c&H000000&"
-                  f"\\3a&H40&\\1c{col}\\fscx{sc - 7}\\fscy{sc - 7}\\t(0,80,\\fscx{sc}\\fscy{sc})}}{_clean(w['t'])}")
+                  f"\\3a&H40&\\1c{col}\\fscx{sc - 7}\\fscy{sc - 7}\\t(0,80,\\fscx{sc}\\fscy{sc})}}{word}")
     Path(path).write_text(head + "\n".join(ev) + "\n", encoding="utf-8")
 
 
@@ -796,6 +801,7 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
     sw, sh, dur = info["w"], info["h"], info["dur"]
     say("распознаю речь…")
     words = m.merge_hyphens(transcribe_verbatim(src, cfg) if o.get("cut_fillers", True) else m.transcribe(src, cfg))
+    src_words = list(words)
     if not words:
         say("речь не распозналась: ролик будет без субтитров")
     if o["cut_pauses"] and words:
@@ -926,9 +932,180 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
         raise Stop("ffmpeg: " + ((r.stderr or "").strip().splitlines() or ["?"])[-1][:300])
     meta = {"src": str(src), "out": str(out), "duration": round(total, 2),
             "hook": " ".join(w["t"] for w in hook), "words": len(tw), "music": str(mp) if mp else None,
-            "text": " ".join(w["t"] for w in tw)[:2000]}
+            "text": " ".join(w["t"] for w in tw)[:2000], "src_dur": round(dur, 2),
+            "src_words": [{"t": w["t"], "s": w["s"], "e": w["e"]} for w in src_words]}
     say(f"готово: {total:.1f} с, крючок «{meta['hook']}»")
     return out, meta
+
+
+# ---------- проверка готового ролика: техника + критик и судья ----------
+BLOG_CRITIC = """Ты строгий критик коротких вертикальных роликов TikTok/Reels/Shorts из разговорных видео блогеров
+(формат «Мурчик»: человек в кадре рассказывает историю, сверху крупные «главные слова»-крючок, ниже субтитры).
+Цель: чтобы ролик досматривали и пересылали. Важнее всего первые 1-2 секунды, понятная законченная мысль
+и сильный конец (панчлайн или вывод), а не обрыв на полуслове.
+
+Что есть:
+- кадры готового ролика (секунда указана перед каждым);
+- цифры: {metrics} (dead_air: секунд тишины дольше секунды; hook_loud: громче ли начало, дБ);
+- главные слова на экране: «{hook}»;
+- речь ИСХОДНИКА с секундами (исходник {src_dur:.1f} с):
+{text}
+
+Проверь: видно ли человека и картинку (не чёрный экран, не заставка), читаются ли главные слова и цепляют ли
+они, понятна ли история без контекста, нет ли обрыва на полуслове в начале или конце, нет ли пустого вступления.
+Если начало пустое или ролик начинается с середины мысли — предложи start_at (секунда ИСХОДНИКА, с начала фразы).
+Если конец обрывается или после панчлайна хвост — предложи end_at (секунда ИСХОДНИКА, конец фразы).
+Если главные слова слабые — предложи hook: 2-4 слова из самой сильной фразы (по-русски, как сказано).
+Не предлагай обрезку, если ролик станет короче 12 секунд.
+
+Ответ ТОЛЬКО JSON:
+{{"score": от 1 до 10, "hook_ok": true/false, "issues": ["конкретная проблема", ...], "good": ["что хорошо", ...],
+"start_at": число или null, "end_at": число или null, "hook": "новые главные слова" или null,
+"decision": "publish|fix|reject", "reason": "одна короткая фраза"}}"""
+
+
+def tech_check(out, meta):
+    """Проверка без Claude: есть картинка (не чёрная), длина нормальная, речь распознана."""
+    import highlights as hl
+    probs = []
+    if not hl.video_ok(out):
+        probs.append("чёрная картинка или нет видео")
+    if float(meta.get("duration") or 0) < 8:
+        probs.append(f"слишком короткий ({meta.get('duration', 0):.0f} с)")
+    if not meta.get("words"):
+        probs.append("речь не распозналась: нет субтитров")
+    return probs
+
+
+def critic(out, meta, cfg, say=print):
+    import agents as ag
+    from accounts import hook_metrics
+    met = hook_metrics(out)
+    dur = met.get("dur") or float(meta.get("duration") or 0)
+    content = []
+    for t, b64 in ag.frames(out, dur):
+        content.append({"type": "text", "text": f"кадр на {t:.1f} с"})
+        content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}})
+    content.append({"type": "text", "text": BLOG_CRITIC.format(
+        metrics=json.dumps(met, ensure_ascii=False), hook=meta.get("hook", ""), src_dur=float(meta.get("src_dur") or 0),
+        text=ag.transcript(meta.get("src_words") or [])[:6000])})
+    res = ag._claude(content, cfg, 900, vision=True)
+    if not res:
+        return None
+    try:
+        res["score"] = int(res.get("score") or 5)
+    except Exception:
+        res["score"] = 5
+    sd = float(meta.get("src_dur") or 0)
+    for k in ("start_at", "end_at"):
+        v = res.get(k)
+        res[k] = float(v) if isinstance(v, (int, float)) and 0 <= float(v) <= sd else None
+    a, b = res["start_at"] or 0.0, res["end_at"] or sd
+    if b - a < 12:
+        res["start_at"] = res["end_at"] = None
+    hk = str(res.get("hook") or "").strip()
+    res["hook"] = hk if hk and hk.lower() != str(meta.get("hook", "")).lower() else None
+    d = str(res.get("decision", "publish")).lower()
+    res["decision"] = d if d in ("publish", "fix", "reject") else "publish"
+    if res["decision"] == "fix" and not (res["start_at"] is not None or res["end_at"] is not None or res["hook"]):
+        res["decision"] = "publish"
+    say(f"критик: {res['score']}/10 — " + ("; ".join(str(x) for x in (res.get("issues") or [])[:3]) or "замечаний нет"))
+    return res
+
+
+def trim_source(src, a, b, say=print):
+    """Новый исходник из куска [a, b] (секунды исходника) + сдвинутые слова, чтобы не распознавать заново."""
+    src = Path(src)
+    dst = src.with_name(f"{src.stem}_fix{int(a * 10)}_{int(b * 10)}.mp4")
+    r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{a:.2f}", "-to", f"{b:.2f}", "-i", str(src),
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "192k", str(dst)],
+                       capture_output=True, text=True, creationflags=NOWIN)
+    if r.returncode != 0 or not dst.exists():
+        say("не получилось обрезать исходник по совету критика")
+        return None
+    cache = src.with_suffix(".verb.json")
+    if cache.exists():
+        try:
+            ws = json.loads(cache.read_text(encoding="utf-8"))
+            ws = [dict(w, s=round(w["s"] - a, 3), e=round(w["e"] - a, 3)) for w in ws if a - 0.05 <= w["s"] and w["e"] <= b + 0.05]
+            dst.with_suffix(".verb.json").write_text(json.dumps(ws, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+    return dst
+
+
+def make_checked(src, cfg, enc, opts=None, say=print, out=None):
+    """Монтаж + проверка: техника всегда, критик (если есть ключ Claude) до 2 переделок.
+    В meta["review"] — оценка, замечания и решение: publish (хорошо) или reject (слабый/битый ролик)."""
+    import agents as ag
+    o = dict(opts or {})
+    res_out, meta = make(src, cfg, enc, o, say=say, out=out)
+    rounds, cur_src = [], Path(src)
+    for rnd in range(1, 4):
+        probs = tech_check(res_out, meta)
+        if probs:
+            say("проверка: " + "; ".join(probs))
+        if "чёрная картинка или нет видео" in probs:
+            meta["review"] = {"decision": "reject", "score": 0, "issues": probs, "reason": "битое видео", "rounds": rounds}
+            return res_out, meta
+        if not ag._key():
+            meta["review"] = {"decision": "publish" if not probs else "reject", "score": None, "issues": probs,
+                              "reason": "критик выключен: нет ключа Claude", "rounds": rounds}
+            return res_out, meta
+        say(f"критик смотрит ролик (круг {rnd})…")
+        try:
+            rep = critic(res_out, meta, cfg, say)
+        except Exception as e:
+            say(f"критик не сработал: {e}")
+            rep = None
+        if not rep:
+            break
+        rep["issues"] = probs + list(rep.get("issues") or [])
+        rounds.append({k: rep.get(k) for k in ("score", "issues", "good", "decision", "reason", "start_at", "end_at", "hook")})
+        if rep["decision"] != "fix" or rnd == 3:
+            break
+        new_src, new_o = cur_src, dict(o)
+        if rep["start_at"] is not None or rep["end_at"] is not None:
+            a = rep["start_at"] or 0.0
+            b = rep["end_at"] or float(meta.get("src_dur") or 0)
+            t = trim_source(cur_src, a, b, say)
+            if t:
+                new_src = t
+        if rep["hook"]:
+            new_o["hook_text"] = rep["hook"]
+        if new_src == cur_src and new_o == o:
+            break
+        say("переделываю по замечаниям критика: " + (rep.get("reason") or ""))
+        try:
+            o2, m2 = make(new_src, cfg, enc, new_o, say=say, out=out)
+        except Stop as e:
+            say(f"переделка не вышла: {e}")
+            break
+        res_out, meta, cur_src, o = o2, m2, new_src, new_o
+    if not rounds:
+        meta["review"] = {"decision": "publish", "score": None, "issues": [], "reason": "критик не ответил", "rounds": []}
+        return res_out, meta
+    last = rounds[-1]
+    dec = "publish" if last["decision"] in ("publish", "fix") else "reject"
+    min_sc = float((cfg.get("blogger") or {}).get("min_score", 6))
+    if dec == "publish" and float(last["score"] or 0) < min_sc:
+        dec = "reject"
+        last["reason"] = f"оценка {last['score']}/10 ниже порога {min_sc:g}"
+    meta["review"] = {"decision": dec, "score": last["score"], "issues": last.get("issues") or [],
+                      "reason": last.get("reason") or "", "rounds": rounds}
+    say(("✅ критик: выкладывать" if dec == "publish" else "❌ критик: в брак") + f" ({last['score']}/10). {last.get('reason') or ''}")
+    return res_out, meta
+
+
+def review_caption(meta):
+    rv = meta.get("review") or {}
+    if not rv:
+        return ""
+    head = ("✅ Критик: выкладывать" if rv.get("decision") == "publish" else "❌ Критик: брак, лучше не выкладывать")
+    sc = f" ({rv['score']}/10)" if rv.get("score") is not None else ""
+    iss = "".join(f"\n• {x}" for x in (rv.get("issues") or [])[:3])
+    fixes = len(rv.get("rounds") or []) - 1
+    return f"{head}{sc}" + (f", переделок: {fixes}" if fixes > 0 else "") + (f"\n{rv['reason']}" if rv.get("reason") else "") + iss + "\n"
 
 
 def tg_send(path, caption):
