@@ -1910,12 +1910,26 @@ def ensure_space(min_gb=2.0, say=print, skip_vods=False):
 def pick_encoder(cfg):
     if cfg["encoder"] != "auto":
         return cfg["encoder"]
+    if cfg.get("hevc"):                          # «как с телефона»: HEVC, как пишут айфон и телефонные редакторы
+        r = run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=s=640x360:d=0.2",
+                 "-c:v", "hevc_amf", "-f", "null", "-"])
+        return "hevc_amf" if r.returncode == 0 else "libx265"
     r = run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=s=640x360:d=0.2",
              "-c:v", "h264_amf", "-f", "null", "-"])
     return "h264_amf" if r.returncode == 0 else "libx264"
 
 
+def is_hevc(enc):
+    return enc in ("hevc_amf", "libx265")
+
+
 def encoder_args(enc):
+    if enc == "hevc_amf":                        # видеокарта Radeon: HEVC ~14 Мбит/с, как экспорт с айфона
+        return ["-c:v", "hevc_amf", "-quality", "quality", "-rc", "vbr_peak", "-b:v", "14M", "-maxrate", "20M",
+                "-tag:v", "hvc1"]
+    if enc == "libx265":
+        return ["-c:v", "libx265", "-preset", "fast", "-crf", "20", "-tag:v", "hvc1",
+                "-x265-params", "log-level=error:info=0"]
     if enc == "h264_amf":
         return ["-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp",
                 "-qp_i", "18", "-qp_p", "20", "-qp_b", "22"]
@@ -3139,10 +3153,11 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
             "-c:a", "aac", "-b:a", "192k", "-flags:a", "+bitexact", str(tmp)]
     r = run(cmd, cwd=str(CACHE))
     if r.returncode != 0:
-        if enc == "h264_amf":
+        if enc in ("h264_amf", "hevc_amf"):
             why = [x for x in (r.stderr or "").strip().splitlines() if x.strip()][-1:] if r is not None else []
             print("  кодировщик видеокарты не сработал, пробую обычный" + (f" ({why[0][:150]})" if why else ""))
-            return montage(clip, fmt, streamer, title, out, cfg, "libx264", fixed_title, satis, show_title, force)
+            return montage(clip, fmt, streamer, title, out, cfg, "libx265" if enc == "hevc_amf" else "libx264",
+                           fixed_title, satis, show_title, force)
         print(r.stderr[-1500:])
         return None
     # самопроверка: картинка должна идти с первой секунды и до конца, иначе ролик в работу не отдаём
@@ -3154,7 +3169,7 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
         v_start, v_dur = 0.0, total
     if v_start > 0.2 or v_dur < total - 1.0:
         print(f"  сборка вышла с браком: видео начинается с {v_start:.1f} с, длится {v_dur:.1f} из {total:.1f} с")
-        if enc == "h264_amf":
+        if enc in ("h264_amf", "hevc_amf"):
             print("  пересобираю обычным кодировщиком")
             return montage(clip, fmt, streamer, title, out, cfg, "libx264", fixed_title, satis, show_title, force)
         tmp.unlink(missing_ok=True)
@@ -3162,8 +3177,11 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
     # вторым проходом без перекодирования убираем все служебные метки
     clean = ["ffmpeg", "-v", "error", "-y", "-i", str(tmp), "-map", "0:v", "-map", "0:a",
              "-c", "copy", "-map_metadata", "-1", "-map_chapters", "-1",
-             "-fflags", "+bitexact", "-bsf:v", "filter_units=remove_types=6",
-             "-movflags", "+faststart", str(out.resolve())]
+             "-fflags", "+bitexact", "-bsf:v",
+             # без служебных SEI-меток кодировщика и с квадратными пикселями (иначе пропорции не ровно 9:16)
+             ("filter_units=remove_types=39|40,hevc_metadata=sample_aspect_ratio=1/1" if is_hevc(enc)
+              else "filter_units=remove_types=6,h264_metadata=sample_aspect_ratio=1/1"),
+             "-aspect", "9:16", "-movflags", "+faststart", str(out.resolve())]
     r = run(clean)
     tmp.unlink(missing_ok=True)
     ass.unlink(missing_ok=True)

@@ -190,7 +190,7 @@ def init_data():
             "can_dota": not ROLE["child"] and A.cfg.get("mode") != "blogger" and not any(k == "dota" for k, _ in profile_dirs()),
             "can_murchik": not ROLE["child"] and A.cfg.get("mode") != "blogger" and not any(k == "murchik" for k, _ in profile_dirs()),
             "blog_keys": A.cfg.get("mode") == "blogger" and not m.KEY_FILE.exists(),
-            "no_tg": bool(A.cfg.get("no_tg"))}
+            "no_tg": bool(A.cfg.get("no_tg")), "hevc": bool(A.cfg.get("hevc"))}
 
 
 def _style_key(label):
@@ -1113,6 +1113,15 @@ def streamers(d):
 # ключи
 def settings(d):
     act = d.get("act")
+    if act == "hevc":                            # экспорт «как с телефона»: HEVC вместо H.264
+        on = bool(d.get("on"))
+        path = BASE / "montage.json"
+        j = json.loads(path.read_text(encoding="utf-8"))
+        j["hevc"] = on
+        path.write_text(json.dumps(j, ensure_ascii=False, indent=2), encoding="utf-8")
+        A.cfg["hevc"] = on
+        A.enc = None                             # кодировщик выберется заново на следующем ролике
+        return {"ok": True}
     if act == "get":
         try:
             c = json.loads(rv.CONFIG_FILE.read_text(encoding="utf-8"))

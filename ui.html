@@ -721,12 +721,15 @@ async function openSettings(){const v=await api("settings",{act:"get"});
     <div class="sect"><h4>Темы в группе Telegram (по желанию)</h4><p>Чтобы клипы и свои видео приходили в разные темы: создай группу с темами, добавь туда бота администратором,
       в теме для клипов отправь <b>/clips</b>, в теме для своих видео <b>/my</b>, потом нажми кнопку.</p>
       <div class="flex"><button class="btn sm" id="s_topics">Привязать темы</button><span class="res" id="r_topics"></span></div></div>
+    ${S.init&&S.init.mode!=="blogger"?`<div class="sect"><h4>Видео как с телефона</h4><p>Ролики кодируются в HEVC (H.265), как экспорт с айфона и телефонных редакторов. Работает на видеокарте Radeon; если она не умеет, монтаж будет медленнее. Для проверки: неделю сравни просмотры с обычными роликами.</p>
+      <label class="flex" style="gap:8px;cursor:pointer"><input type="checkbox" id="s_hevc" ${S.init.hevc?"checked":""}> Экспорт в HEVC</label></div>`:""}
     ${S.init&&S.init.can_dota?`<div class="sect"><h4>Профиль DOTA</h4><p>Отдельная вкладка для клипов Dota 2: свой пул дота-стримеров, своя очередь и свой баннер. Ключи и Telegram берутся отсюда.</p>
       <div class="flex"><button class="btn sm" id="s_dota">Создать вкладку DOTA</button></div></div>`:""}
     ${S.init&&S.init.can_murchik?`<div class="sect"><h4>Профиль «Мурчик»</h4><p>Отдельная вкладка для монтажа блогера в одном стиле (Вальдемар): закидываешь видео — получаешь готовый ролик с ч/б, крючком, щелчками, субтитрами и музыкой.</p>
       <div class="flex"><button class="btn sm" id="s_murchik">Создать профиль «Мурчик»</button></div></div>`:""}
     <div class="flex"><button class="btn small-primary" id="s_save">Сохранить</button><span class="res bad" id="s_msg"></span></div>`,"narrow");
   const mb=w.querySelector("#s_murchik");if(mb)mb.onclick=()=>makeMurchik(mb);
+  const hv=w.querySelector("#s_hevc");if(hv)hv.onchange=async()=>{await api("settings",{act:"hevc",on:hv.checked});S.init.hevc=hv.checked;toast(hv.checked?"Новые ролики будут в HEVC":"Новые ролики снова в H.264");};
   const db=w.querySelector("#s_dota");if(db)db.onclick=async()=>{db.disabled=true;db.textContent="Создаю…";const r=await api("blog",{act:"make_dota"});
     if(r.error){db.disabled=false;db.textContent="Создать вкладку DOTA";return toast(r.error,false)}
     if(!r.banner)alert("Вкладка DOTA создана. Добавь баннер оффера для доты: «Баннер оффера» → «Баннеры офферов…».");location.href=r.url;};
