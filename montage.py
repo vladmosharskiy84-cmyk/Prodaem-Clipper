@@ -2775,7 +2775,7 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
     # ---- стиль монтажа и шрифт ----
     style = (force or {}).get("style") or cfg.get("style", "classic")
     if style == "random":                        # свой стиль у каждого ролика, при пересборке тот же
-        names = list(STYLES)
+        names = [k for k in (cfg.get("styles_on") or STYLES) if k in STYLES] or list(STYLES)   # стили, выбранные в профиле
         style = names[int(hashlib.md5(("st" + clip.stem).encode("utf-8")).hexdigest(), 16) % len(names)]
     if style not in STYLES:
         style = "classic"

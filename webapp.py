@@ -140,10 +140,164 @@ def profile_dirs():
 
 
 def profile_label(key, d):
+    # label.txt — имя вкладки, которое задали в «Профилях»; profile.txt не трогаем: от него зависят окно и ярлык
+    for name in ("label.txt", "profile.txt"):
+        try:
+            t = (d / name).read_text(encoding="utf-8-sig").strip()[:20]
+            if t:
+                return t
+        except Exception:
+            pass
+    return LABELS.get(key, key.upper())
+
+
+MAX_PROFILES = 5                                  # вместе с главным (СНГ)
+PROFILE_KINDS = {"clips": "Клипы стримеров (Twitch)", "dota": "Клипы Dota 2", "blogger": "Монтаж блогера (как Мурчик)"}
+TRASH = CODE.parent / "clipper_trash"             # удалённые профили: можно вернуть руками, переложив папку назад
+
+
+def all_profile_dirs():
+    """Все профили рядом с программой, вместе со скрытыми: [(key, папка)]."""
+    out = []
+    for d in sorted(CODE.parent.glob(CODE.name + "_*")):
+        if d.is_dir() and d != TRASH and (d / "profile.txt").exists() and (d / "montage.json").exists():
+            out.append((d.name[len(CODE.name) + 1:].lower(), d))
+    return out
+
+
+def profile_kind(d):
     try:
-        return (d / "profile.txt").read_text(encoding="utf-8-sig").strip()[:12] or LABELS.get(key, key.upper())
+        mj = json.loads((d / "montage.json").read_text(encoding="utf-8"))
     except Exception:
-        return LABELS.get(key, key.upper())
+        return "clips"
+    if mj.get("mode") == "blogger":
+        return "blogger"
+    return "dota" if mj.get("game_label") == "Дота" else "clips"
+
+
+def launch_child(key, dst):
+    """Запускает профиль в фоне без перезапуска программы; возвращает его порт."""
+    if key not in ROLE["children"]:
+        port = free_port(SERVER["port"] + 1 + len(ROLE["children"]))
+        ROLE["children"][key] = port
+        env = dict(os.environ, CLIPPER_DATA=str(dst), PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+        subprocess.Popen([sys.executable, str(CODE / "review.py"), "--data", str(dst), "--port", str(port),
+                          "--no-window", "--token", TOKEN, "--parent", str(SERVER["port"])],
+                         cwd=str(dst), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         stdin=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        t0 = time.time()
+        while time.time() - t0 < 20 and not _alive(port):
+            time.sleep(0.3)
+    return ROLE["children"][key]
+
+
+def stop_child(key):
+    port = ROLE["children"].pop(key, None)
+    if port:
+        try:
+            _post(port, "quit", {}, timeout=5)
+        except Exception:
+            pass
+
+
+def profile_add(name, kind):
+    """Новый профиль из шаблона: клипы (как СНГ), дота или блогер. Ключи и Telegram — как в главном."""
+    name = re.sub(r"\s+", " ", str(name or "")).strip()[:20]
+    if not name:
+        return {"error": "Напиши название профиля"}
+    if kind not in PROFILE_KINDS:
+        return {"error": "Выбери, какой монтаж будет в профиле"}
+    if 1 + len(all_profile_dirs()) >= MAX_PROFILES:
+        return {"error": f"Профилей уже {MAX_PROFILES} — это максимум. Удали ненужный и создай новый."}
+    i = 1
+    while (CODE.parent / f"{CODE.name}_p{i}").exists():
+        i += 1
+    key, dst = f"p{i}", CODE.parent / f"{CODE.name}_p{i}"
+    dst.mkdir(parents=True)
+    for f in ("claude_key.txt", "telegram_token.txt", "telegram_chat.txt", "telegram_topics.json"):
+        if (CODE / f).exists():
+            shutil.copy2(CODE / f, dst / f)
+    cfg = json.loads((CODE / "config.json").read_text(encoding="utf-8")) if (CODE / "config.json").exists() else {}
+    mj = json.loads((CODE / "montage.json").read_text(encoding="utf-8"))
+    mj.update(cams={}, crops={})
+    if kind == "blogger":
+        mj["mode"] = "blogger"
+    else:
+        mj.pop("mode", None)
+    if kind == "dota":
+        cfg.update(talk_categories=[], cs_categories=["Dota 2"], min_duration=10)
+        for k in ("banners", "banner_use", "banner_cs", "banner_talk"):          # баннеры СНГ доте не подходят
+            mj.pop(k, None)
+        mj.update(language="ru", banner_speed=1.4, min_duration=10, game_label="Дота",
+                  tags="#дота2 #dota2 #стример #twitch #нарезки", banner_cs_blur=0, banner_talk_blur=0)
+        bn = next((b for b in ("banner_dota.mov", "banner_dota.mp4") if (CODE / b).exists()), None)
+        if bn:
+            shutil.copy2(CODE / bn, dst / bn)
+            mj.update(banner_cs=bn, banner_talk=bn, banner_cs_crop=None, banner_talk_crop=None)
+        (dst / "streamers.txt").write_text("# Пул стримеров: один ник Twitch в строке\n" + "\n".join(DOTA_STREAMERS) + "\n",
+                                           encoding="utf-8")
+    elif kind == "clips" and (CODE / "streamers.txt").exists():
+        shutil.copy2(CODE / "streamers.txt", dst / "streamers.txt")
+    (dst / "config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    (dst / "montage.json").write_text(json.dumps(mj, ensure_ascii=False, indent=2), encoding="utf-8")
+    (dst / "satisfying").mkdir(exist_ok=True)
+    (dst / "profile.txt").write_text(re.sub(r"[^\w -]", "", name)[:12].strip() or key.upper(), encoding="utf-8")
+    (dst / "label.txt").write_text(name, encoding="utf-8")
+    port = launch_child(key, dst)
+    A.log(f"создан профиль «{name}»: {PROFILE_KINDS[kind].lower()}")
+    return {"ok": True, "url": f"http://127.0.0.1:{port}/?k={TOKEN}"}
+
+
+def profile_rename(key, name):
+    name = re.sub(r"\s+", " ", str(name or "")).strip()[:20]
+    if not name:
+        return {"error": "Название не может быть пустым"}
+    d = CODE if not key else dict(all_profile_dirs()).get(key)
+    if not d:
+        return {"error": "нет такого профиля"}
+    (d / "label.txt").write_text(name, encoding="utf-8")
+    return {"ok": True}
+
+
+def profile_delete(key):
+    """Профиль не стираем: папка уезжает в clipper_trash, оттуда её можно вернуть."""
+    d = dict(all_profile_dirs()).get(key) if key else None
+    if not d:
+        return {"error": "Главный профиль удалить нельзя" if not key else "нет такого профиля"}
+    stop_child(key)
+    TRASH.mkdir(exist_ok=True)
+    dst = TRASH / f"{d.name}_{time.strftime('%Y-%m-%d_%H-%M')}"
+    for _ in range(10):                          # профиль мог ещё не отпустить файлы
+        try:
+            shutil.move(str(d), str(dst))
+            break
+        except OSError:
+            time.sleep(1)
+    else:
+        return {"error": "Профиль ещё работает (монтирует?). Попробуй через минуту."}
+    A.log(f"профиль «{profile_label(key, dst)}» удалён (лежит в {dst})")
+    return {"ok": True}
+
+
+def montage_setup(d):
+    """Монтаж этого профиля: какие форматы показывать и из каких стилей выбирать «случайный»."""
+    fmts = [k for k, _, _ in rv.FORMATS]
+    if "formats_on" in d or "styles_on" in d:
+        path = BASE / "montage.json"
+        j = json.loads(path.read_text(encoding="utf-8"))
+        for k, allowed in (("formats_on", fmts), ("styles_on", list(m.STYLES))):
+            if k in d:
+                on = [x for x in d.get(k) or [] if x in allowed]
+                if not on:
+                    return {"error": "Оставь хотя бы один " + ("формат" if k == "formats_on" else "стиль")}
+                j[k] = on
+                A.cfg[k] = on
+        path.write_text(json.dumps(j, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"ok": True}
+    f_on = A.cfg.get("formats_on") or fmts
+    s_on = A.cfg.get("styles_on") or list(m.STYLES)
+    return {"formats": [{"key": k, "label": SHORT.get(k, k), "on": k in f_on} for k in fmts],
+            "styles": [{"key": k, "label": v, "on": k in s_on} for k, v in m.STYLES.items()]}
 
 
 def my_key():
@@ -167,7 +321,9 @@ def ports_map():
 
 # ---------- что отдаём странице ----------
 def init_data():
-    fmts = [{"key": k, "label": SHORT[k], "full": lab, "hint": h} for k, lab, h in rv.FORMATS]
+    f_on = A.cfg.get("formats_on") or [k for k, _, _ in rv.FORMATS]       # форматы, выбранные для этого профиля
+    fmts = [{"key": k, "label": SHORT[k], "full": lab, "hint": h} for k, lab, h in rv.FORMATS if k in f_on]
+    s_on = A.cfg.get("styles_on") or list(m.STYLES)
     gl = A.cfg.get("game_label")
     if gl:
         for f in fmts:
@@ -179,7 +335,7 @@ def init_data():
             profiles.append({"key": key, "label": profile_label(key, d), "current": key == me,
                              "url": f"http://127.0.0.1:{ports[key]}/?k={TOKEN}"})
     return {"app": rv.APP_NAME, "profile": (rv.PROFILE or "").lower(), "profiles": profiles, "formats": fmts,
-            "styles": [["random", "Случайный"]] + [[k, v] for k, v in m.STYLES.items()], "geo": list(m.GEO_STYLES),
+            "styles": [["random", "Случайный"]] + [[k, v] for k, v in m.STYLES.items() if k in s_on], "geo": list(m.GEO_STYLES),
             "fonts": m.available_fonts(), "font_lib": {k: list(v) for k, v in m.FONT_LIB.items()}, "style": A.st.get("style_key") or _style_key(A.st.get("style")),
             "anims": [[k, v] for k, v in m.SUB_ANIMS.items()], "anim": A.st.get("sub_anim") or "karaoke",
             "zoom": A.st.get("zoom", True), "teaser": A.st.get("teaser", True),
@@ -187,8 +343,10 @@ def init_data():
             "banners": banners_short(), "banner_use": A.cfg.get("banner_use"),
             "needs_setup": rv.needs_setup() and A.cfg.get("mode") != "blogger", "game": gl or "КС",
             "video_broken": VB_FILE.exists(), "mode": A.cfg.get("mode") or "clips",
-            "can_dota": not ROLE["child"] and A.cfg.get("mode") != "blogger" and not any(k == "dota" for k, _ in profile_dirs()),
-            "can_murchik": not ROLE["child"] and A.cfg.get("mode") != "blogger" and not any(k == "murchik" for k, _ in profile_dirs()),
+            "can_dota": not ROLE["child"] and A.cfg.get("mode") != "blogger" and not any(k == "dota" for k, _ in profile_dirs())
+                        and 1 + len(all_profile_dirs()) < MAX_PROFILES,
+            "can_murchik": not ROLE["child"] and A.cfg.get("mode") != "blogger" and not any(k == "murchik" for k, _ in profile_dirs())
+                           and 1 + len(all_profile_dirs()) < MAX_PROFILES,
             "blog_keys": A.cfg.get("mode") == "blogger" and not m.KEY_FILE.exists(),
             "no_tg": bool(A.cfg.get("no_tg")), "hevc": bool(A.cfg.get("hevc"))}
 
@@ -1153,6 +1311,21 @@ def settings(d):
                 key = pd.name[len(CODE.name) + 1:].lower()
                 out.append({"key": key, "label": profile_label(key, pd), "shown": not (pd / "hidden.txt").exists()})
         return {"tabs": out}
+    if act == "montage":                         # настройка монтажа текущего профиля
+        return montage_setup(d)
+    if act in ("profiles", "profile_add", "profile_rename", "profile_delete"):
+        if ROLE["child"]:
+            return {"error": "Профили настраиваются из главного окна (первая вкладка)"}
+        if act == "profile_add":
+            return profile_add(d.get("name"), d.get("kind"))
+        if act == "profile_rename":
+            return profile_rename(str(d.get("key") or ""), d.get("name"))
+        if act == "profile_delete":
+            return profile_delete(str(d.get("key") or ""))
+        rows = [{"key": "", "label": profile_label("", CODE), "kind": "clips", "main": True, "shown": True}]
+        rows += [{"key": k, "label": profile_label(k, pd), "kind": profile_kind(pd), "main": False,
+                  "shown": not (pd / "hidden.txt").exists()} for k, pd in all_profile_dirs()]
+        return {"profiles": rows, "max": MAX_PROFILES, "kinds": PROFILE_KINDS}
     if act == "tab_set":
         if not re.fullmatch(r"[a-z0-9_-]{1,30}", str(d.get("key") or "")):
             return {"error": "нет такого профиля"}

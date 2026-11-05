@@ -740,6 +740,39 @@ async function openSettings(){const v=await api("settings",{act:"get"});
     const save=w.querySelector("#s_save").parentElement;save.parentElement.insertBefore(box,save);
     box.querySelectorAll("[data-tab]").forEach(c=>c.onchange=async()=>{const r=await api("settings",{act:"tab_set",key:c.dataset.tab,shown:c.checked});
       if(r.error)return toast(r.error,false);toast(c.checked?"Вкладка вернётся после перезапуска программы":"Вкладка скрыта — обнови окно (F5)");});})();}
+  const putBox=(box)=>{const save=w.querySelector("#s_save").parentElement;save.parentElement.insertBefore(box,save);};
+  if(S.init&&S.init.mode!=="blogger"){(async()=>{       /* монтаж этого профиля: свои форматы и стили */
+    const r=await api("settings",{act:"montage"});if(!r.formats)return;
+    const box=document.createElement("div");box.className="sect";
+    const row=(x,g)=>`<label class="note" style="display:inline-flex;gap:6px;align-items:center;margin:4px 12px 4px 0"><input type="checkbox" data-g="${g}" value="${esc(x.key)}" ${x.on?"checked":""}> ${esc(x.label)}</label>`;
+    box.innerHTML=`<h4>Монтаж этого профиля</h4><p>Какие форматы показывать в этом профиле и из каких стилей выбирать, когда стоит «Случайный». У каждого профиля свой набор.</p>
+      <p class="note" style="margin:8px 0 2px"><b>Форматы</b></p>${r.formats.map(x=>row(x,"formats_on")).join("")}
+      <p class="note" style="margin:8px 0 2px"><b>Стили</b></p>${r.styles.map(x=>row(x,"styles_on")).join("")}`;
+    putBox(box);
+    box.querySelectorAll("[data-g]").forEach(c=>c.onchange=async()=>{const g=c.dataset.g;
+      const on=[...box.querySelectorAll(`[data-g="${g}"]`)].filter(x=>x.checked).map(x=>x.value);
+      const q=await api("settings",{act:"montage",[g]:on});if(q.error){c.checked=true;return toast(q.error,false)}
+      toast("Сохранено — обнови окно (F5), чтобы списки обновились");});})();}
+  if(S.init&&!S.init.profile&&S.init.mode!=="blogger"){(async()=>{   /* профили: добавить, переименовать, удалить */
+    const box=document.createElement("div");box.className="sect";putBox(box);
+    const draw=async()=>{const r=await api("settings",{act:"profiles"});if(!r.profiles){box.remove();return}
+      const full=r.profiles.length>=r.max;
+      box.innerHTML=`<h4>Профили (${r.profiles.length} из ${r.max})</h4><p>У каждого профиля свои стримеры, очередь, баннер и монтаж. Ключи и Telegram берутся отсюда. Удалённый профиль уезжает в папку clipper_trash — его можно вернуть.</p>`+
+        r.profiles.map(x=>`<div class="flex" style="gap:8px;align-items:center;margin:6px 0"><b style="min-width:110px">${esc(x.label)}</b><span class="note" style="flex:1">${esc(r.kinds[x.kind]||"")}${x.main?" · главный":""}</span>
+          <button class="btn sm" data-ren="${esc(x.key)}" data-name="${esc(x.label)}">Переименовать</button>${x.main?"":`<button class="btn sm" data-del="${esc(x.key)}" data-name="${esc(x.label)}">Удалить</button>`}</div>`).join("")+
+        (full?`<p class="note">Профилей ${r.max} — это максимум. Чтобы создать новый, удали ненужный.</p>`:
+        `<div class="flex" style="gap:8px;margin-top:10px"><input class="inp" id="p_name" placeholder="Название, например VYRO" maxlength="20" style="flex:1;margin:0">
+          <select class="inp" id="p_kind" style="flex:1;margin:0">${Object.entries(r.kinds).map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join("")}</select>
+          <button class="btn sm" id="p_add">Создать</button></div>`);
+      box.querySelectorAll("[data-ren]").forEach(b=>b.onclick=async()=>{const n=prompt("Новое название профиля",b.dataset.name);if(!n||!n.trim())return;
+        const q=await api("settings",{act:"profile_rename",key:b.dataset.ren,name:n});if(q.error)return toast(q.error,false);toast("Переименовано — обнови окно (F5)");draw();});
+      box.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{if(!confirm(`Удалить профиль «${b.dataset.name}»? Он перестанет работать, папка уедет в clipper_trash.`))return;
+        b.disabled=true;b.textContent="Удаляю…";const q=await api("settings",{act:"profile_delete",key:b.dataset.del});
+        if(q.error){b.disabled=false;b.textContent="Удалить";return toast(q.error,false)}toast("Профиль удалён — обнови окно (F5)");draw();});
+      const add=box.querySelector("#p_add");if(add)add.onclick=async()=>{const name=box.querySelector("#p_name").value.trim();if(!name)return toast("Напиши название профиля",false);
+        add.disabled=true;add.textContent="Создаю…";const q=await api("settings",{act:"profile_add",name,kind:box.querySelector("#p_kind").value});
+        if(q.error){add.disabled=false;add.textContent="Создать";return toast(q.error,false)}location.href=q.url;};};
+    draw();})();}
   if(S.init&&S.init.mode==="blogger"){                 /* Мурчик: Twitch не нужен, Claude обязателен */
     const tw=w.querySelector("#s_cid");if(tw)tw.closest(".sect").remove();
     w.querySelector(".sub").textContent="Мурчику нужен ключ Claude (обязательно) и бот Telegram (по желанию: туда приходят готовые ролики).";
