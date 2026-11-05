@@ -1,22 +1,22 @@
 {
-  "version": "2026.11.05 09:40",
-  "time": 1793864421.3328512,
-  "notes": "Профили: до 5 штук, создание из шаблона (клипы, Dota, блогер), переименование и удаление в корзину; у каждого профиля свои форматы и стили монтажа",
+  "version": "2026.11.05 09:48",
+  "time": 1793864910.3418698,
+  "notes": "Исправление субтитров через Claude снова работает (и заголовки, камера, критик); обновления больше не падают «скачался не полностью»; ролики из запаса не теряются; битые клипы перекачиваются",
   "files": {
-    "montage.py": "4d75dc704d57ed7cd1a19fed9f857c7dd26cedf3c4f580757e7171a07c3cc160",
-    "review.py": "6ca95618dc79c52ee9b2fd1aca0018e1dec13e8a334222df0ca2b0c58fe48af8",
-    "top5.py": "c53864b1b1e8d908a4246a86929c80c2b32014fb64c98b374f92f27361af556a",
+    "montage.py": "ae2343b9d16cf217e1a344071ee4543f174fb5b900fcc061af3070347753cee4",
+    "review.py": "0f7d8b02231a9bd13f74d8625147bec9661fc46bf76461661dafc8d598c7f04c",
+    "top5.py": "d70f586b96f327d8cbcc08d8959d494cf5cc450138498038d33afc8e9460cc67",
     "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
-    "clipfinder.py": "1ad5f5af546ab59c59f9e8ef44a4a821c39252d537848b041dc277cde654151b",
-    "updater.py": "ab51e41cfcd45d65c46670910037356318a7ea2da66bdfafa9acff13e21b4481",
+    "clipfinder.py": "0cd908d65261037025109ab958809f78df8cf0984b47e1441137a6888cbe0e25",
+    "updater.py": "770ac30a48b5f381a34c3a7c323289d8618ad2c88ebdb6969a1bcb27e8cb05c9",
     "webapp.py": "89a0e0b180823ffaf21930b33b7b34e4e4e9dd54fc0bb9ab74c6ed59361568c8",
     "ui.html": "5879861ec305e414cb18ec19b8d34f1ad322fb1fb7308a6965fffbd094c6f2d6",
     "logo_src.png": "e43b51bb73da86652be2c2adac971e5b39557d895d84a4c2449e9b99f95c1739",
-    "highlights.py": "30f6e31384a37b1c84b9c28614bcd29aeadb862bb9315c9397545a0efc5ba145",
-    "accounts.py": "6fc93b02487dcb40ef29d91251f3ee13fe5a710fe7ed2287559670ae0ec59be0",
-    "agents.py": "33669b96f0e55baa7eb7cbe41f34e6c7db5e0344dfe422a24b5ca9a2c43ba79b",
+    "highlights.py": "cfd1c971d69f122c7adcc8eab37aaf9aeca38a00e415227812267f50bd530898",
+    "accounts.py": "7a8d5d533418f0168a18b4942ad09cd0de1b7473d55695197f222b64aa57c17b",
+    "agents.py": "08803606e98c469d892fcde27d0a095b57f5753ccd4c426ba7cb1afaf53a44d3",
     "leaders.py": "06951d301f174cb68aed842807048974977038e49ae9439738ac155ab69a7dc1",
     "tgbot.py": "3f1b7305dbb32ee153741b736f2fb3a75a6e168b911d1e57dc51dbabdf2a7619",
-    "blogger.py": "ab27064a1a7f5a6fefe9e733f0ee5e85848d74b5b07529af5f1956811a136c89"
+    "blogger.py": "0a714d1dff46b2deb9b5d7ed7f085e4537038037dd76a49c41f8b59af5ddeac0"
   }
 }

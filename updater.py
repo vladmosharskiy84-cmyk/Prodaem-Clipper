@@ -39,6 +39,20 @@ def base_url():
     return url if url.endswith("/") else url + "/"
 
 
+def pinned(url):
+    """raw.githubusercontent отдаёт файлы из кэша по одному: version.json уже новый, а montage.py ещё старый,
+    и обновление падало «скачался не полностью». Берём все файлы из одного коммита — у него кэш всегда целый."""
+    pre = "https://raw.githubusercontent.com/"
+    if not url.startswith(pre):
+        return url
+    owner, repo, branch = url[len(pre):].strip("/").split("/")[:3]
+    try:
+        info = json.loads(_get(f"https://api.github.com/repos/{owner}/{repo}/commits/{branch}").decode("utf-8"))
+        return f"{pre}{owner}/{repo}/{info['sha']}/"
+    except Exception:
+        return url                               # API недоступен (лимит запросов) — работаем как раньше
+
+
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -63,6 +77,7 @@ def check():
     url = base_url()
     if not url:
         return {"off": True}
+    url = pinned(url)
     try:
         info = json.loads(_get(url + "version.json").decode("utf-8-sig"))
     except Exception as e:
@@ -72,7 +87,8 @@ def check():
     newer = float(info.get("time", 0)) > applied_time()
     missing = any(not (BASE / n).exists() for n in changed)   # новый файл программы, которого ещё нет
     return {"available": bool(changed) and (newer or missing), "version": str(info.get("version", "")),
-            "notes": str(info.get("notes", "")), "changed": changed, "files": files, "time": info.get("time", 0)}
+            "notes": str(info.get("notes", "")), "changed": changed, "files": files, "time": info.get("time", 0),
+            "url": url}
 
 
 def apply(info):
@@ -82,6 +98,7 @@ def apply(info):
     fresh = check()                              # сверяемся с хранилищем заново: старый список мог устареть
     if fresh.get("changed") is not None and not fresh.get("error"):
         info = fresh
+    url = info.get("url") or url                 # файлы — из того же коммита, что и version.json
     tmp = BASE / "cache" / "update_tmp"
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True, exist_ok=True)
@@ -95,6 +112,7 @@ def apply(info):
                 again = check()
                 if again.get("files", {}).get(name) == hashlib.sha256(data).hexdigest():
                     info = again
+                    url = info.get("url") or url
                     break
             time.sleep(5 * (attempt + 1))
         if hashlib.sha256(data).hexdigest() != info["files"][name]:

@@ -87,11 +87,26 @@ def safe_name(text, limit=60):
     return text[:limit].strip() or "clip"
 
 
+def video_ok(path):
+    """Файл реально открывается: есть видеодорожка и длительность. Недокачанный клип потом не открывался в окне."""
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "format=duration",
+                            "-of", "csv=p=0", str(path)], capture_output=True, text=True, timeout=30,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return r.returncode == 0 and float(r.stdout.strip() or 0) > 0.5
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return True                               # нет ffprobe — не мешаем скачиванию
+
+
 def download(url, target):
     target.parent.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-m", "yt_dlp", "--no-warnings", "--quiet",
            "-o", str(target), url]
-    return subprocess.run(cmd).returncode == 0 and target.exists()
+    for _ in range(2):                            # битый файл удаляем и качаем ещё раз
+        if subprocess.run(cmd).returncode == 0 and target.exists() and video_ok(target):
+            return True
+        target.unlink(missing_ok=True)
+    return False
 
 
 def main():

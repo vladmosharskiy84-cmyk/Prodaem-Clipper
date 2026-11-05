@@ -778,8 +778,8 @@ def run_job(job, cfg, enc, log=print):
         p["agents"] = ag
         if ag.get("plan"):
             pl = ag["plan"]
-            hashtags = pl["hashtags"] or hashtags
-            text = pl["caption"] or text
+            hashtags = pl.get("hashtags") or hashtags   # у плана «в запас» хештегов нет — ролик терялся с ошибкой
+            text = pl.get("caption") or text
     out.with_suffix(".txt").write_text(text + f"\n\n{hashtags}\n", encoding="utf-8")
     if ag and ag["decision"] != "publish":       # в основной чат только 3 лучших на аккаунт
         sc_ = float(ag.get("score") or 0)

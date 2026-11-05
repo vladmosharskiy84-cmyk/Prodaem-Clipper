@@ -283,7 +283,7 @@ def ai_accents(words, cfg):
                       "Не служебные слова. Ответ ТОЛЬКО JSON-список номеров.\n\n" + txt[:6000])
             r = requests.post("https://api.anthropic.com/v1/messages",
                               headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                              json={"model": cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 200,
+                              json={"model": cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 4200,
                                     "messages": [{"role": "user", "content": prompt}]}, timeout=60)
             if r.status_code == 200:
                 out = "".join(b.get("text", "") for b in r.json()["content"] if b.get("type") == "text")
@@ -379,7 +379,7 @@ def drop_words(words, cfg, say=print):
                       "оставь. Ответ ТОЛЬКО JSON-список номеров слов, которые вырезать.\n\n" + txt[:12000])
             r = requests.post("https://api.anthropic.com/v1/messages",
                               headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                              json={"model": cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 1200,
+                              json={"model": cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 5200,
                                     "messages": [{"role": "user", "content": prompt}]}, timeout=90)
             if r.status_code == 200:
                 out = "".join(b.get("text", "") for b in r.json()["content"] if b.get("type") == "text")
@@ -541,7 +541,7 @@ def pick_stories(words, n, length, cfg, say=print):
     for chunk in parts:
         r = requests.post("https://api.anthropic.com/v1/messages",
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                          json={"model": cfg.get("story_model") or cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 6000,
+                          json={"model": cfg.get("story_model") or cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 10000,
                                 "messages": [{"role": "user", "content": STORY_PROMPT.format(n=n, a=a, b=b, text=chunk)}]},
                           timeout=240)
         if r.status_code != 200:

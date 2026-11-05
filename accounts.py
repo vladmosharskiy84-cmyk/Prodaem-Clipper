@@ -600,7 +600,7 @@ def claude_report(data, cfg, say):
             r = requests.post("https://api.anthropic.com/v1/messages",
                               headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                                        "content-type": "application/json"},
-                              json={"model": model, "max_tokens": 3000,
+                              json={"model": model, "max_tokens": 7000,
                                     "messages": [{"role": "user", "content": prompt}]}, timeout=180)
         except Exception as e:
             last = str(e)

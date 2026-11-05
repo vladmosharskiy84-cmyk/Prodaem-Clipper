@@ -60,7 +60,7 @@ def _claude(content, cfg, max_tokens=900, vision=False):
             r = requests.post("https://api.anthropic.com/v1/messages",
                               headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                                        "content-type": "application/json"},
-                              json={"model": model, "max_tokens": max_tokens,
+                              json={"model": model, "max_tokens": max_tokens + 4000,
                                     "messages": [{"role": "user", "content": content}]}, timeout=120)
         except Exception as e:
             print(f"  агент: нет связи с Claude ({e})")

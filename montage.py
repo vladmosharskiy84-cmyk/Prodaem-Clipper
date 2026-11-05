@@ -198,7 +198,7 @@ def ai_fix_words(words, clip, cfg):
                               headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                                        "content-type": "application/json"},
                               json={"model": cfg.get("cheap_model", "claude-haiku-5-5"),
-                                    "max_tokens": 200 + 8 * len(part),
+                                    "max_tokens": 4000 + 8 * len(part),   # + запас: Haiku 5.5 сначала думает
                                     "messages": [{"role": "user",
                                                   "content": FIX_PROMPT.format(n=len(part), body=body)}]}, timeout=90)
             if r.status_code != 200:
@@ -300,7 +300,7 @@ def ai_meta(words, streamer, cfg):
             "https://api.anthropic.com/v1/messages",
             headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
-            json={"model": cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 300,
+            json={"model": cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 4300,
                   "messages": [{"role": "user",
                                 "content": (PROMPT_EN if lang() == "en" else PROMPT).format(
                                     streamer=streamer or "unknown", text=text)}]},
@@ -750,7 +750,7 @@ def claude_layout(clip, info, streamer=""):
             r = requests.post("https://api.anthropic.com/v1/messages",
                               headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                                        "content-type": "application/json"},
-                              json={"model": model, "max_tokens": 400,
+                              json={"model": model, "max_tokens": 4400,
                                     "messages": [{"role": "user", "content": content}]}, timeout=90)
             if r.status_code == 200:
                 break
