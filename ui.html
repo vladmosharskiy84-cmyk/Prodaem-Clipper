@@ -307,6 +307,35 @@ body.leaving .app{opacity:0;transform:scale(.985);transition:opacity .35s,transf
 .sr button{height:28px;width:28px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--mut);cursor:pointer}
 @media (max-width:900px){.edgrid{grid-template-columns:1fr}}
 .blogmode .side>section:first-child,.blogmode .editor>:not(.ph):not(.stagewrap):not(.player):not(.acts):not(.blogset){display:none}
+.rxmode{--rxh:min(66vh,680px)}
+.rxmode .editor{display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:22px;row-gap:12px;align-items:start}
+.rxmode .editor .ph{display:none}
+.rxmode .editor .stagewrap{background:none;border-radius:0;overflow:visible;grid-column:1;grid-row:1}
+.rxmode .editor .player{grid-column:1;grid-row:2;width:calc(var(--rxh)*9/16)}
+.rxmode .editor .acts{grid-column:2;grid-row:1/span 2;position:static;margin:0;padding:0;border:0;box-shadow:none;background:none;align-self:start}
+@media(max-width:1100px){.rxmode .editor{grid-template-columns:1fr}.rxmode .editor .stagewrap,.rxmode .editor .player,.rxmode .editor .acts{grid-column:1;grid-row:auto}.rxmode .editor .player{width:auto}}
+.rxprev{position:relative;height:var(--rxh);aspect-ratio:9/16;container-type:size;overflow:hidden;border-radius:26px;border:6px solid #1b1b24;box-shadow:0 18px 50px #000c,0 0 0 1px #ffffff1f;
+  background:radial-gradient(70% 38% at 18% 14%,#8b6cff 0%,transparent 72%),radial-gradient(75% 45% at 88% 88%,#27c7e6 0%,transparent 72%),radial-gradient(60% 30% at 90% 30%,#c04bd6aa 0%,transparent 72%),#3a2c78}
+.rxcam{position:absolute;left:4.444%;top:5.208%;width:91.111%;height:23.125%;border-radius:3.7cqw;overflow:hidden;background:linear-gradient(160deg,#1a1a24,#12121a);box-shadow:0 2.6cqw 6cqw #000a}
+.rxcam::after{content:"КАМЕРА";position:absolute;left:10px;top:9px;font:600 9px/1 var(--display,inherit);letter-spacing:.14em;color:#fff;background:#0009;padding:4px 7px;border-radius:99px;backdrop-filter:blur(6px);z-index:2;pointer-events:none}
+.rxpanel{display:flex;flex-direction:column;gap:14px;width:100%}
+.rxhead{display:flex;align-items:center;gap:10px}.rxsel{flex:1;min-width:0;font-size:13px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rxgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:1100px){.rxgrid{grid-template-columns:1fr}}
+.rxgroup{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:14px 16px}
+.rxgroup h4{margin:0 0 12px;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.rxrow{display:grid;grid-template-columns:104px 1fr 42px;align-items:center;gap:10px;font-size:12px;color:var(--mut);margin-bottom:10px}
+.rxrow input[type=range]{width:100%;accent-color:var(--a1);cursor:pointer}.rxrow em{font-style:normal;text-align:right;font-variant-numeric:tabular-nums;color:#fff;font-size:12px}
+.rxfields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.rxfields label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--mut)}.rxfields .inp{margin:0;width:100%}
+.rxgo{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rxcam video{position:absolute;max-width:none;object-fit:fill;left:0;top:0}
+.rxnocam{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:10px;color:var(--mut);font-size:12px;line-height:1.4}
+.rxvid{position:relative;flex:1;display:grid;place-items:center;background:radial-gradient(120% 80% at 30% 20%,#3b2a7a 0%,transparent 60%),radial-gradient(100% 70% at 80% 90%,#0e5a6a 0%,transparent 60%),#120d24}
+.rxcard{position:absolute;left:4.444%;top:29.896%;width:91.111%;height:66.25%;border-radius:3.7cqw;box-shadow:0 2.6cqw 6cqw #000a;background:linear-gradient(165deg,#1d1840,#0b1a24 70%,#0a0a12);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:#fff;text-align:center}
+.rxcard::before{content:"▶";display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.1);font-size:12px;padding-left:2px}
+.rxcard b{font-size:14px;font-weight:700}.rxcard span{font-size:11px;color:var(--mut)}
+.rxsubs{position:absolute;left:50%;transform:translateX(-50%);bottom:7%;font-family:Rubik,var(--display,inherit);font-weight:800;color:#eeff00;font-size:6.2cqw;letter-spacing:.02em;white-space:nowrap;
+  text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 3px 6px #000a;cursor:grab;touch-action:none;user-select:none;padding:4px 8px;border-radius:8px;outline:1px dashed transparent;transition:outline-color .2s}
+.rxsubs:hover{outline-color:#ffffff66}.rxsubs.drag{cursor:grabbing;outline-color:#eeff00}
 .blogset{display:flex;flex-direction:column;gap:14px}.blogmode #ov{display:none}.blogmode .stage{cursor:default;pointer-events:none}.drop.sm{padding:18px 12px}.drop.sm b{font-size:14px}.drop.sm span{font-size:12px}
 .blogmain{grid-column:1/3;display:flex;flex-direction:column;gap:14px}
 .drop{border:2px dashed var(--line);border-radius:18px;padding:46px 20px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;cursor:pointer;transition:border-color .25s,background .25s}
@@ -335,6 +364,7 @@ body.leaving .app{opacity:0;transform:scale(.985);transition:opacity .35s,transf
       <div class="qbtns">
         <button class="btn" id="find"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Найти новые клипы</span></button>
         <button class="btn" id="vodbtn" style="--k:var(--a2)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="14" height="14" rx="2"/><path d="M16 10l6-3v10l-6-3M6 9l4 3-4 3"/></svg>Нарезать стрим…</button>
+        <button class="btn" id="rxbtn" style="--k:var(--a2)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="7" rx="2"/><rect x="2" y="11" width="20" height="11" rx="2"/></svg>Реакция…</button>
         <button class="btn" id="ttbtn" style="--k:var(--ok)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18M6 16v-5M11 16V7M16 16v-8M21 16V4"/></svg>Аналитика TikTok</button>
         <button class="btn" id="ldbtn" style="--k:var(--a1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l2.6 5.5 6 .8-4.4 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6L3.4 9.3l6-.8z"/></svg>Учиться у лидеров</button>
         <button class="btn" id="edbtn" style="--k:var(--a2)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg>Готовые ролики и правка</button>
@@ -444,6 +474,7 @@ const S={init:null,items:[],cur:null,clip:null,fmt:"talk",rects:[],content:null,
   $$("#chips .chip").forEach(c=>c.onclick=()=>setFmt(c.dataset.f,true));
   S.style=d.style||"classic";S.font=d.font||"";S.banner=d.banner_use;S.anim=d.anim||"karaoke";$("#zoom").checked=d.zoom!==false;$("#teaser").checked=d.teaser!==false;S.videoBroken=!!d.video_broken;
   if(d.mode==="blogger"){await blogMode();poll();if(d.blog_keys)setTimeout(openSettings,500);return}
+  if(d.mode==="reaction"){await reactMode();poll();return}
   loadFontPreviews();buildMenus();await loadQueue(true);poll();
   if(d.needs_setup)setTimeout(openSettings,500);
 })();
@@ -604,7 +635,8 @@ $("#suby").onchange=()=>{api("look",{fmt:S.fmt,sub:+$("#suby").value});if(S.clip
 function subY(){return $("#subauto").checked?null:Math.round(1920*$("#suby").value/100)}
 
 /* ---------- пример ролика ---------- */
-function schedulePreview(ms){if(S.pvvKey&&S.pvvKey!==pvKey())stopPv();clearTimeout(S.pvTimer);S.pvTimer=setTimeout(previewNow,ms??350);}
+function schedulePreview(ms){if(S.rx)return;   /* у «Реакций» свой макет: пример клипа не нужен */
+  if(S.pvvKey&&S.pvvKey!==pvKey())stopPv();clearTimeout(S.pvTimer);S.pvTimer=setTimeout(previewNow,ms??350);}
 async function previewNow(){if(!S.clip)return;if(S.fmt==="react"||S.fmt==="cs"){if(!S.rects.length){$("#pvnote").textContent="Обведи камеру стримера, чтобы увидеть пример.";$("#pvnote").className="note";return}}
   if(S.fmt==="multi"&&S.rects.length<2){$("#pvnote").textContent="Обведи хотя бы две камеры.";return}
   $("#phone").classList.add("busy");$("#pvbtn").innerHTML='<span class="spin"></span>Рисую…';
@@ -643,14 +675,17 @@ async function poll(){let d;
   try{const r=await fetch(`/poll?since=${S.seq}&k=${K}`,{cache:"no-store"});d=await r.json();S.offline=0;$("#offline").hidden=true;}
   catch(e){S.offline++;if(S.offline>3)$("#offline").hidden=false;setTimeout(poll,1500);return}
   S.seq=d.seq;let reload=false;
+  try{                                              /* ошибка в одном месте не должна останавливать обновление окна */
   for(const ev of d.events){
     if(ev.kind==="log")addLog(ev.t,ev.text);
     else if(ev.kind==="toast")toast(ev.text,ev.ok);
     else if(ev.kind==="queue")reload=true;
-    else if(ev.kind==="preview")onPreview(ev);
-    else if(ev.kind==="pvideo")onPvideo(ev);}
-  if(reload||d.queue_ver!==S.qver)loadQueue();
+    else if(ev.kind==="preview"&&!S.rx)onPreview(ev);
+    else if(ev.kind==="pvideo"&&!S.rx)onPvideo(ev);}
+  if(!S.rx&&(reload||d.queue_ver!==S.qver))loadQueue();   /* у «Реакций» своя очередь: общую не грузим */
   renderJobs(d);
+  }catch(e){console.error(e);try{if(!S.pollErr){S.pollErr=1;addLog("окно","ошибка окна: "+(e&&e.message||e));}}catch(e3){}
+    try{renderJobs(d);}catch(e2){console.error(e2);}}           /* панель «Монтаж» обновляем в любом случае */
   const fb=$("#find");if(fb){fb.querySelector("span").textContent=d.finding?"Ищу клипы…":"Найти новые клипы";fb.classList.toggle("on",d.finding);}
   if(d.upd==="ready"&&!S.updReady){S.updReady=true;$("#upd").innerHTML='<span class="dot"></span>Установить обновление';}
   setTimeout(poll,600);}
@@ -659,17 +694,19 @@ function onPreview(ev){donePreview();if(ev.error){$("#pvnote").textContent=ev.er
   $("#pvnote").textContent=ev.note||"Белая рамка: сюда встанет баннер. Субтитры для примера.";$("#pvnote").className="note"+(ev.note?" warn":"");
   if($("#subauto").checked&&ev.sub_auto)$("#suby").value=Math.round(100*ev.sub_auto/1920);}
 function addLog(t,text){const L=$("#log"),p=document.createElement("p");p.innerHTML=`<span class="k">${t}</span> ${esc(text)}`;L.appendChild(p);
-  while(L.children.length>400)L.firstChild.remove();L.scrollTop=1e9;$("#status").textContent=text.trim();}
+  while(L.children.length>400)L.firstChild.remove();L.scrollTop=1e9;const st=$("#status");if(st)st.textContent=text.trim();}   /* в «Реакциях» строки статуса нет */
 function renderJobs(d){const c=[];c.push(`<span class="cnt">ждут: ${d.wait}</span>`,`<span class="cnt">готово: ${d.done}</span>`);if(d.failed)c.push(`<span class="cnt bad">с ошибкой: ${d.failed}</span>`);
   const running=d.jobs.some(j=>j.state==="run"&&!j.vod);if(d.wait||running)c.push(`<button class="btn sm stopall" id="stopall">■ Остановить всё</button>`);
   $("#counts").innerHTML=c.join("");const sa=$("#stopall");if(sa)sa.onclick=async()=>{sa.disabled=true;sa.textContent="Останавливаю…";
     const r=await api("cancel",{all:true});toast(`Убрано из пачки: ${r.removed||0}`+(r.stopping?", текущий ролик останавливается":""));};$("#jstate").textContent=d.busy?"монтируется":d.wait?"в очереди":"ничего";
-  const sig=JSON.stringify(d.jobs.map(j=>[j.id,j.state,j.stage]));if(sig===S.jobsSig){$$(".job").forEach(el=>{const j=d.jobs.find(x=>x.id===el.dataset.id);if(j&&j.sec)el.querySelector(".top span").textContent=j.style+" · "+m_s(j.sec);});return}
+  const jt=j=>j.style+(j.sec?" · "+m_s(j.sec):"")+(j.pct!=null&&j.state==="run"?` · ${j.pct}%`+(j.eta?` · осталось ~${m_s(j.eta)}`:""):"");
+  const jbar=(el,j)=>{const bi=el.querySelector(".bar i");if(!bi)return;if(j.pct!=null&&j.state==="run"){bi.style.animation="none";bi.style.transform=`scaleX(${Math.max(.03,j.pct/100)})`;}else{bi.style.animation="";bi.style.transform="";}};
+  const sig=JSON.stringify(d.jobs.map(j=>[j.id,j.state,j.stage,j.pct]));if(sig===S.jobsSig){$$(".job").forEach(el=>{const j=d.jobs.find(x=>x.id===el.dataset.id);if(j&&j.sec)el.querySelector(".top span").textContent=jt(j);});return}
   S.jobsSig=sig;const J=$("#jobs");if(!d.jobs.length)return;
   const have=new Set($$(".job").map(e=>e.dataset.id));J.querySelector(".empty")?.remove();
   [...d.jobs].reverse().forEach(j=>{let el=J.querySelector(`.job[data-id="${j.id}"]`);
     if(!el){el=document.createElement("div");el.dataset.id=j.id;el.innerHTML='<div class="top"><b></b><span></span></div><div class="st"></div><div class="bar"><i></i></div>';J.prepend(el);}
-    el.className="job "+j.state;el.querySelector("b").textContent=j.streamer+" · "+j.fmt;el.querySelector(".top span").textContent=j.style+(j.sec?" · "+m_s(j.sec):"");
+    el.className="job "+j.state;el.querySelector("b").textContent=j.streamer+" · "+j.fmt;el.querySelector(".top span").textContent=jt(j);jbar(el,j);
     el.querySelector(".st").textContent=j.stage;el.title=j.state==="done"&&j.out?"Открыть папку с роликом":j.stage;
     el.onclick=j.state==="done"&&j.out?()=>api("open_out",{path:j.out}):null;
     let fb2=el.querySelector(".folderv");if(j.state==="done"&&j.out&&!fb2){fb2=document.createElement("button");fb2.className="btn sm folderv";
@@ -815,6 +852,126 @@ $("#vodbtn").onclick=()=>{const w=modal(`<h3>Нарезать стрим</h3><p 
     if(r.error){w.querySelector("#v_msg").textContent=r.error;return}if(r.cancel)return;toast("Нарезка стрима началась, ход в панели «Монтаж»");w.close();};
   w.querySelector("#v_go").onclick=()=>go("url");w.querySelector("#v_file").onclick=()=>go("file");
   w.querySelector("#v_src").onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey&&links().length<=1){e.preventDefault();go("url");}};w.querySelector("#v_src").focus();};
+
+/* реакция «своя камера»: файлы камер + ссылки на видео по порядку → по 5 роликов до минуты, камера 30% / видео 70% */
+function rxForm(root,sv,onDone){let cams=[];sv=sv||{};
+  const opt=(a,sel)=>a.map(([v,l])=>`<option value="${esc(v)}"${v===sel?" selected":""}>${esc(l)}</option>`).join("");
+  const bans=[["","Без баннера"],...(S.init.banners||[]).map(x=>[x.name,x.name])];
+  const sub=sv.subs===false?"off":(sv.sub_pos||"bottom");
+  root.innerHTML=`<h3>Реакция</h3><p class="sub">Твоя камера сверху (30%), видео снизу (70%), субтитры. Звук — только из видео.
+    Первая камера идёт к первому видео, вторая — ко второму. С каждого видео выйдет несколько роликов до минуты из самых интересных мест.</p>
+    <div class="flex" style="gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <label class="note">Баннер <select class="inp" id="rx_ban" style="margin:0">${opt(bans,sv.banner!=null?sv.banner:(S.init.banner_use||""))}</select></label>
+      <label class="note">Субтитры <select class="inp" id="rx_sub" style="margin:0">${opt([["bottom","Снизу"],["center","По центру видео"],["top","Сверху видео"],["off","Без субтитров"]],sub)}</select></label>
+      <label class="note">Шрифт <select class="inp" id="rx_font" style="margin:0">${opt([["","Как в настройках"],...(S.init.fonts||[]).map(f=>[f,f])],sv.font||"")}</select></label>
+      <label class="note">Роликов с видео <input class="inp" id="rx_n" type="number" min="1" max="10" value="${+sv.n||5}" style="width:70px;margin:0"></label></div>
+    <div class="flex" style="margin-bottom:6px"><button class="btn" id="rx_cams">Выбрать файлы камер…</button><span class="note" id="rx_camn">камер: 0</span></div>
+    <textarea class="inp" id="rx_vids" rows="4" placeholder="Ссылки на видео, по одной на строку, в том же порядке, что камеры" style="resize:vertical"></textarea>
+    <div class="flex"><button class="btn small-primary" id="rx_go">Нарезать</button><span class="res bad" id="rx_msg"></span></div>
+    <p class="note" style="text-align:left;margin-top:10px">Камеру и видео программа сама сведёт по звуку, если телефон слышал видео из колонок. Если нет — считает, что ты начал запись и видео одновременно. Готовые ролики приходят в Telegram и лежат в папке clips\ready\reaction.</p>`;
+  const q=s=>root.querySelector(s);
+  q("#rx_cams").onclick=async()=>{const r=await api("reaction",{act:"pick"});if(r.files&&r.files.length){cams=r.files;
+    q("#rx_camn").textContent="камер: "+cams.length+" — "+cams.map(f=>f.split(/[\/]/).pop()).join(", ");}};
+  q("#rx_go").onclick=async()=>{const vids=q("#rx_vids").value.split("\n").map(s=>s.trim()).filter(Boolean);const sb=q("#rx_sub").value;
+    const r=await api("reaction",{cams,videos:vids,n:+q("#rx_n").value||5,banner:q("#rx_ban").value,
+      subs:sb!=="off",sub_pos:sb==="off"?"bottom":sb,font:q("#rx_font").value});
+    if(r.error){q("#rx_msg").textContent=r.error;return}toast("Реакции нарезаются, ход в панели «Монтаж»");
+    cams=[];q("#rx_camn").textContent="камер: 0";q("#rx_vids").value="";if(onDone)onDone();};}
+$("#rxbtn").onclick=async()=>{const r=await api("reaction",{act:"init"});const w=modal('<div class="rxroot"></div>',"narrow");rxForm(w.querySelector(".rxroot"),r.saved,()=>w.close());};
+async function reactMode(){                       /* профиль «Реакции»: слева очередь видео, под видео — камера и настройки */
+  document.body.classList.add("blogmode","rxmode");S.rx=true;
+  const r0=await api("reaction",{act:"init"});const sv=r0.saved||{};let Q=r0.queue||[],sel=null;
+  const opt=(a,s)=>a.map(([v,l])=>`<option value="${esc(v)}"${v===s?" selected":""}>${esc(l)}</option>`).join("");
+  const short=s=>s.replace(/^https?:\/\/(www\.)?/,"").split(/[\\/]/).pop().slice(0,60)||s;
+  $(".qbtns").innerHTML=`<button class="btn" id="rq_cam" style="margin-bottom:8px">📷 1. Выбрать свою камеру</button>
+    <textarea class="inp" id="rq_urls" rows="3" placeholder="2. Ссылка на видео (по одной на строку)" style="resize:vertical;margin-bottom:8px"></textarea>
+    <button class="btn" id="rq_add">3. Добавить в очередь</button>`;
+  const draw=()=>{$("#list").innerHTML=Q.length?Q.map((x,i)=>`<button class="clip${x.id===sel?" on":""}" data-id="${x.id}">
+      <span class="av" style="--c1:${x.cam?"#7c5cff":"#b45309"};--c2:${x.cam?"#22d3ee":"#ef4444"}">${i+1}</span><span style="min-width:0"><b>${esc(short(x.src))}</b><em>${x.cam?"📷 "+esc(short(x.cam)):"⚠ камера не выбрана"}</em></span><span class="meta">${x.done?"✅":""}</span></button>`).join("")
+      :'<div class="empty">Очередь пуста.<br>Вставь ссылки на видео снизу слева и нажми «Добавить в очередь».</div>';
+    $$("#list [data-id]").forEach(b=>b.onclick=()=>{sel=b.dataset.id;draw();panel();});};
+  const sub=sv.subs===false?"off":(sv.sub_pos||"bottom"),bans=[["","Без баннера"],...(S.init.banners||[]).map(x=>[x.name,x.name])];
+  const acts=$(".acts");acts.innerHTML=`<div class="rxpanel">
+    <div class="rxhead"><span class="rxsel" id="rx_sel">Выбери видео в очереди слева</span>
+      <button class="btn" id="rx_cam">Выбрать камеру…</button><button class="btn" id="rx_del">Убрать</button></div>
+    <div class="rxgrid">
+      <div class="rxgroup"><h4>Камера</h4>
+        <div class="rxrow"><span>Масштаб</span><input type="range" id="rx_z" min="100" max="300" value="100"><em id="rx_zv">100%</em></div>
+        <div class="rxrow"><span>Влево — вправо</span><input type="range" id="rx_x" min="0" max="100" value="50"><em id="rx_xv">50</em></div>
+        <div class="rxrow"><span>Вверх — вниз</span><input type="range" id="rx_y" min="0" max="100" value="50"><em id="rx_yv">50</em></div>
+        <button class="btn" id="rx_rc">Сбросить</button></div>
+      <div class="rxgroup"><h4>Ролик</h4><div class="rxfields">
+        <label>Баннер<select class="inp" id="rx_ban">${opt(bans,sv.banner!=null?sv.banner:(S.init.banner_use||""))}</select></label>
+        <label>Субтитры<select class="inp" id="rx_sub">${opt([["bottom","Снизу"],["center","По центру видео"],["top","Сверху видео"],["custom","Своё место (перетащи в макете)"],["off","Без субтитров"]],sub)}</select></label>
+        <label>Шрифт<select class="inp" id="rx_font">${opt([["","Rubik Bold (жёлтый)"],...(S.init.fonts||[]).map(f=>[f,f])],sv.font||"")}</select></label>
+        <label>Роликов с видео<input class="inp" id="rx_n" type="number" min="1" max="10" value="${+sv.n||5}"></label></div></div></div>
+    <div class="rxgo"><button class="btn primary" id="rx_one">Нарезать выбранное</button><button class="btn" id="rx_all">Нарезать все с камерами</button>
+      <div class="status" id="rx_msg"></div></div></div>`;
+  const pend={id:"pend",cam:"",crop:null,src:""};   /* камера, выбранная до ссылки: станет камерой нового видео */
+  const cur=()=>Q.find(x=>x.id===sel)||(!sel&&pend.cam?pend:null);
+  /* макет ролика как в TikTok: камера сверху 30%, внизу карточка «здесь будет видео» на размытом фоне */
+  $("#stage").style.display="none";S.cur=null;
+  const sw=document.querySelector(".stagewrap"),pr=document.createElement("div");pr.className="rxprev";
+  pr.innerHTML=`<div class="rxcam" id="rxcam"><div class="rxnocam" id="rxnocam"></div></div>
+    <div class="rxcard"><b>Здесь будет видео</b><span>по ссылке, на большую карточку</span></div><div class="rxsubs" id="rxsubs">СУБТИТРЫ</div>`;
+  sw.appendChild(pr);$("#rxcam").prepend($("#vid"));
+  const defc={z:1,x:.5,y:.5},crop=()=>Object.assign({},defc,(cur()||{}).crop||{});
+  const applyCrop=()=>{const v=$("#vid"),box=$("#rxcam");if(!cur()||!v.videoWidth||v.hidden)return;const c=crop();
+    const Wc=box.clientWidth,Hc=box.clientHeight,s=Math.max(Wc/v.videoWidth,Hc/v.videoHeight)*c.z,dw=v.videoWidth*s,dh=v.videoHeight*s;
+    Object.assign(v.style,{width:dw+"px",height:dh+"px",left:-(dw-Wc)*c.x+"px",top:-(dh-Hc)*c.y+"px"});};
+  const sliders=()=>{const c=crop();$("#rx_z").value=Math.round(c.z*100);$("#rx_x").value=Math.round(c.x*100);$("#rx_y").value=Math.round(c.y*100);
+    $("#rx_zv").textContent=Math.round(c.z*100)+"%";$("#rx_xv").textContent=Math.round(c.x*100);$("#rx_yv").textContent=Math.round(c.y*100);};
+  /* субтитры: готовые места или своё — перетащи надпись в макете мышкой. Точка = центр слова, доли кадра 1080×1920 */
+  const SUBP={top:[.5,694/1920],center:[.5,1210/1920],bottom:[.5,1590/1920]};
+  let subXY=Array.isArray(sv.sub_xy)&&sv.sub_pos==="custom"?sv.sub_xy:null;
+  const subsLook=()=>{const p=$("#rx_sub").value,e=$("#rxsubs");e.hidden=p==="off";
+    const xy=p==="custom"&&subXY?subXY:(SUBP[p]||SUBP.bottom);
+    Object.assign(e.style,{left:xy[0]*100+"%",top:xy[1]*100+"%",bottom:"auto",transform:"translate(-50%,-50%)"});};
+  (()=>{const e=$("#rxsubs"),cl=(v,a,b)=>Math.max(a,Math.min(b,v));e.title="Перетащи, чтобы поставить субтитры в своё место";
+    e.onpointerdown=ev=>{ev.preventDefault();e.setPointerCapture(ev.pointerId);e.classList.add("drag");
+      const r=pr.getBoundingClientRect();
+      e.onpointermove=m=>{subXY=[cl((m.clientX-r.left)/r.width,.15,.85),cl((m.clientY-r.top)/r.height,.06,.94)];$("#rx_sub").value="custom";subsLook();};
+      e.onpointerup=()=>{e.onpointermove=null;e.classList.remove("drag");};};})();
+  addEventListener("resize",applyCrop);
+  const panel=async()=>{const x=cur();$("#rx_sel").textContent=!x?"Выбери камеру или видео в очереди":x.id==="pend"?"Камера: "+short(x.cam)+" — вставь ссылку слева и нажми «Добавить в очередь»":short(x.src)+" — "+(x.cam?"камера: "+short(x.cam):"камера не выбрана");
+    const v=$("#vid"),nc=$("#rxnocam");S.cur=null;sliders();subsLook();
+    const none=t=>{v.pause();v.removeAttribute("src");v.hidden=true;S.clip=null;nc.hidden=false;nc.textContent=t;updTime();};
+    if(!x)return none("Выбери видео в очереди слева");
+    if(!x.cam)return none("Камера не выбрана: нажми «Выбрать камеру…» справа внизу");
+    none("Готовлю предпросмотр камеры…");
+    const r=await api("reaction",{act:"q_media",id:x.id,path:x.id==="pend"?x.cam:""});const c0=cur();if(!c0||c0.id!==x.id||c0.cam!==x.cam)return;
+    if(r.error)return none(r.error==="нет файла камеры"?"Файл камеры не найден: выбери камеру заново":r.error);
+    nc.hidden=true;v.hidden=false;v.loop=true;v.muted=true;
+    v.onloadedmetadata=()=>{S.clip={dur:v.duration||0};applyCrop();updTime();};v.src=r.url;v.load();};
+  let saveT=0;const cropIn=()=>{const x=cur();if(!x)return;x.crop={z:$("#rx_z").value/100,x:$("#rx_x").value/100,y:$("#rx_y").value/100};sliders();applyCrop();
+    clearTimeout(saveT);if(x.id!=="pend")saveT=setTimeout(()=>api("reaction",{act:"q_crop",id:x.id,crop:x.crop}),400);};
+  ["rx_z","rx_x","rx_y"].forEach(i=>$("#"+i).oninput=cropIn);
+  $("#rx_rc").onclick=()=>{const x=cur();if(!x)return;x.crop=Object.assign({},defc);sliders();applyCrop();if(x.id!=="pend")api("reaction",{act:"q_crop",id:x.id,crop:x.crop});};
+  $("#rx_sub").onchange=subsLook;
+  /* баннеры: как в других профилях — последний пункт открывает настройку (добавить, ускорение, хромакей, размер, края) */
+  const banOpts=v=>{const bs=[["","Без баннера"],...(S.init.banners||[]).map(x=>[x.name,x.name]),["__edit","⚙ Добавить / настроить баннеры…"]];
+    $("#rx_ban").innerHTML=opt(bs,v);$("#rx_ban").dataset.v=v;};
+  banOpts(sv.banner!=null?sv.banner:(S.init.banner_use||""));
+  $("#rx_ban").onchange=e=>{const s=e.target;if(s.value==="__edit"){s.value=s.dataset.v||"";openBanners();return}s.dataset.v=s.value;};
+  S.onBanners=use=>{const cur0=$("#rx_ban").dataset.v;banOpts((S.init.banners||[]).some(x=>x.name===cur0)?cur0:(use||""));};
+  const go=async ids=>{if(!ids.length){$("#rx_msg").textContent="Нет видео с выбранной камерой";return}const sb=$("#rx_sub").value;
+    const r=await api("reaction",{ids,n:+$("#rx_n").value||5,banner:$("#rx_ban").value,subs:sb!=="off",sub_pos:sb==="off"?"bottom":sb,
+      sub_xy:sb==="custom"&&subXY?subXY:null,font:$("#rx_font").value});
+    $("#rx_msg").textContent=r.error||"Нарезается, ход в панели «Монтаж». Готовое — в Telegram и в папке clips/ready/reaction";};
+  $("#rq_add").onclick=async()=>{const urls=$("#rq_urls").value.split("\n").map(s=>s.trim()).filter(Boolean);
+    if(!urls.length){$("#rx_msg").textContent="Вставь ссылку на видео в поле слева";return}
+    const n0=Q.length;Q=(await api("reaction",{act:"q_add",urls,cam:pend.cam,crop:pend.crop})).queue||Q;pend.cam="";pend.crop=null;$("#rq_urls").value="";
+    if(Q.length>n0)sel=Q[n0].id;draw();panel();$("#rx_msg").textContent="";};
+  const pickNew=async()=>{const r=await api("reaction",{act:"pick"});if(r.files&&r.files.length){pend.cam=r.files[0];pend.crop=null;sel=null;draw();panel();}};
+  $("#rq_cam").onclick=pickNew;
+  $("#rx_cam").onclick=async()=>{
+    if(!sel)return pickNew();
+    Q=(await api("reaction",{act:"q_cam",id:sel})).queue||Q;draw();panel();};
+  $("#rx_del").onclick=async()=>{if(!sel)return;Q=(await api("reaction",{act:"q_del",id:sel})).queue||Q;sel=null;draw();panel();};
+  $("#rx_one").onclick=()=>{const x=Q.find(y=>y.id===sel);go(x&&x.cam?[x.id]:[]);};
+  $("#rx_all").onclick=()=>go(Q.filter(x=>x.cam&&!x.done).map(x=>x.id));
+  if(Q.length&&!sel)sel=Q[0].id;
+  draw();panel();}
 
 /* профиль «Мурчик»: монтаж блогера в одном стиле (Вальдемар) */
 async function blogMode(){
@@ -1140,7 +1297,7 @@ async function openBanners(){const r=await api("banners",{act:"get"});const B=JS
   w.querySelector("#b_add").onclick=async()=>{const r=await api("banners",{act:"add"});if(r.error)return toast(r.error,false);if(r.cancel)return;
     let n=r.name,i=2;while(B[n])n=r.name+" "+i++;B[n]={file:r.file,speed:1,fade:0,crop:r.auto?r.auto.crop:null,round:r.auto?r.auto.round:0,chroma:"auto",chroma_sim:0.12,size:"full"};if(!use)use=n;sel=n;list();editor();};
   w.querySelector("#b_save").onclick=async()=>{const r=await api("banners",{act:"save",banners:B,use});if(r.error)return toast(r.error,false);
-    S.init.banners=r.banners;S.banner=r.use;buildMenus();w.close();};
+    S.init.banners=r.banners;S.banner=r.use;buildMenus();w.close();if(S.onBanners)S.onBanners(r.use);};
   list();editor();}
 </script>
 </body>

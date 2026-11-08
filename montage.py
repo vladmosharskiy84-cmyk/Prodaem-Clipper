@@ -2379,16 +2379,19 @@ def find_banner(name):
     """Файл баннера в папке программы. Прощает лишнее расширение (banner.mov.mp4), приписку « (1)»
     и регистр букв. Если не нашёл, объясняет, что именно лежит в папке."""
     name = str(name).strip()
-    p = Path(name) if Path(name).is_absolute() else BASE / name
-    if p.is_file():
-        return p
+    if Path(name).is_absolute() and Path(name).is_file():
+        return Path(name)
     stem = Path(name).stem.split(".")[0].lower()
-    cands = sorted((f for f in BASE.iterdir() if f.is_file() and f.name.lower().startswith(stem)
-                    and f.suffix.lower() in (".mov", ".mp4", ".webm", ".mkv")),
-                   key=lambda f: f.stat().st_mtime, reverse=True)
-    if cands:
-        print(f"  баннер: беру файл {cands[0].name}")
-        return cands[0]
+    for d in dict.fromkeys([BASE, CODE]):         # сначала папка профиля, потом папка программы (там общие баннеры)
+        p = d / name
+        if p.is_file():
+            return p
+        cands = sorted((f for f in d.iterdir() if f.is_file() and f.name.lower().startswith(stem)
+                        and f.suffix.lower() in (".mov", ".mp4", ".webm", ".mkv")),
+                       key=lambda f: f.stat().st_mtime, reverse=True)
+        if cands:
+            print(f"  баннер: беру файл {cands[0]}")
+            return cands[0]
     near = [f.name for f in BASE.iterdir() if f.is_file() and f.suffix.lower() in (".mov", ".mp4", ".webm", ".mkv")]
     raise RuntimeError(f"нет файла баннера {Path(name).name} в папке {BASE}. Видео в папке: "
                        + (", ".join(near) if near else "нет ни одного"))

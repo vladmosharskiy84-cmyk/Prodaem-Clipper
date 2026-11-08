@@ -152,7 +152,8 @@ def profile_label(key, d):
 
 
 MAX_PROFILES = 5                                  # вместе с главным (СНГ)
-PROFILE_KINDS = {"clips": "Клипы стримеров (Twitch)", "dota": "Клипы Dota 2", "blogger": "Монтаж блогера (как Мурчик)"}
+PROFILE_KINDS = {"clips": "Клипы стримеров (Twitch)", "dota": "Клипы Dota 2", "blogger": "Монтаж блогера (как Мурчик)",
+                 "reaction": "Реакции (своя камера + видео)"}
 TRASH = CODE.parent / "clipper_trash"             # удалённые профили: можно вернуть руками, переложив папку назад
 
 
@@ -170,8 +171,8 @@ def profile_kind(d):
         mj = json.loads((d / "montage.json").read_text(encoding="utf-8"))
     except Exception:
         return "clips"
-    if mj.get("mode") == "blogger":
-        return "blogger"
+    if mj.get("mode") in ("blogger", "reaction"):
+        return mj["mode"]
     return "dota" if mj.get("game_label") == "Дота" else "clips"
 
 
@@ -220,8 +221,8 @@ def profile_add(name, kind):
     cfg = json.loads((CODE / "config.json").read_text(encoding="utf-8")) if (CODE / "config.json").exists() else {}
     mj = json.loads((CODE / "montage.json").read_text(encoding="utf-8"))
     mj.update(cams={}, crops={})
-    if kind == "blogger":
-        mj["mode"] = "blogger"
+    if kind in ("blogger", "reaction"):
+        mj["mode"] = kind
     else:
         mj.pop("mode", None)
     if kind == "dota":
@@ -341,7 +342,7 @@ def init_data():
             "zoom": A.st.get("zoom", True), "teaser": A.st.get("teaser", True),
             "font": A.st.get("font") if A.st.get("font") in m.available_fonts() else "",
             "banners": banners_short(), "banner_use": A.cfg.get("banner_use"),
-            "needs_setup": rv.needs_setup() and A.cfg.get("mode") != "blogger", "game": gl or "КС",
+            "needs_setup": rv.needs_setup() and A.cfg.get("mode") not in ("blogger", "reaction"), "game": gl or "КС",
             "video_broken": VB_FILE.exists(), "mode": A.cfg.get("mode") or "clips",
             "can_dota": not ROLE["child"] and A.cfg.get("mode") != "blogger" and not any(k == "dota" for k, _ in profile_dirs())
                         and 1 + len(all_profile_dirs()) < MAX_PROFILES,
@@ -414,6 +415,8 @@ def snapshot(since):
     now = time.time()
     for j in jobs:
         j["sec"] = int((j.get("end") or now) - j["start"]) if j.get("start") else 0
+        if j.get("pct") and j.get("state") == "run" and j["pct"] >= 5:      # сколько осталось: по скорости до сих пор
+            j["eta"] = int(j["sec"] * (100 - j["pct"]) / j["pct"])
     return {"events": ev, "seq": A.seq, "jobs": jobs, "busy": bool(A.busy) or VOD["busy"] or TT["busy"], "wait": A.jobs.qsize(),
             "done": A.done, "failed": A.failed, "queue_ver": A.queue_ver, "finding": A.finding,
             "render": bool(A.busy) or bool(A.jobs.qsize()) or VOD["busy"], "profile": rv.PROFILE or "",
@@ -978,6 +981,176 @@ def worker():
 VOD = {"busy": False, "stop": False}
 
 
+def _rxq():
+    try:
+        return json.loads((BASE / "reaction_queue.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
+def _rx_pct(k, n, t):
+    """Сколько процентов нарезки реакций готово по тексту этапа (видео k из n)."""
+    f = 0.02                                     # скачиваю видео
+    if "ищу лучшие" in t:
+        f = 0.08
+    mm = re.search(r"распознаю речь: (\d+) из (\d+)", t)
+    if mm:
+        f = 0.10 + 0.60 * int(mm[1]) / max(1, int(mm[2]))
+    if "выбираю" in t:
+        f = 0.72
+    mm = re.search(r"монтирую часть (\d+) из (\d+)", t)
+    if mm:
+        f = 0.75 + 0.25 * (int(mm[1]) - 1) / max(1, int(mm[2]))
+    return 100 * ((k - 1) + f) / max(1, n)
+
+
+# настройки «Реакций» в новом профиле: субтитры как у Влада (Rubik Bold жёлтый — в reaction.py, место — чуть выше низа)
+RX_DEFAULT = {"subs": True, "sub_pos": "custom", "sub_xy": [0.49, 0.796], "font": None, "n": 5}
+
+
+def reaction_req(d):
+    """Реакция «своя камера»: файлы камер + ссылки (или файлы) видео по порядку → по 5 роликов до минуты."""
+    if d.get("act") == "pick":
+        return {"files": ask_files("video")}
+    if d.get("act") == "init":                   # настройки, выбранные в прошлый раз в этом профиле
+        return {"saved": A.cfg.get("reaction_opts") or dict(RX_DEFAULT), "queue": _rxq()}
+    if d.get("act") == "q_crop":                 # подрезка камеры: масштаб и сдвиг
+        q = _rxq()
+        c = d.get("crop") or {}
+        for x in q:
+            if x["id"] == d.get("id"):
+                x["crop"] = {"z": min(3.0, max(1.0, float(c.get("z") or 1))),
+                             "x": min(1.0, max(0.0, float(c.get("x", 0.5)))), "y": min(1.0, max(0.0, float(c.get("y", 0.5))))}
+        (BASE / "reaction_queue.json").write_text(json.dumps(q, ensure_ascii=False, indent=1), encoding="utf-8")
+        return {"queue": q}
+    if d.get("act") == "q_media":                # предпросмотр выбранной камеры в плеере
+        rows = list(_rxq())
+        if d.get("path"):                        # камера выбрана до ссылки: в очереди её ещё нет
+            rows.append({"id": "pend" + format(abs(hash(d["path"])) % 10 ** 8, "08d"), "cam": d["path"]})
+            d = dict(d, id=rows[-1]["id"])
+        for x in rows:
+            if x["id"] == d.get("id") and x.get("cam") and Path(x["cam"]).exists():
+                src = Path(x["cam"])             # окно не показывает часть кодеков с телефона: даём лёгкую копию h264 без звука
+                out = BASE / "cache" / "reaction" / f"prev_{x['id']}_{int(src.stat().st_mtime)}.mp4"
+                if not out.exists():
+                    out.parent.mkdir(parents=True, exist_ok=True)
+                    r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-an",
+                                        "-vf", "scale=-2:'min(720,ih)',fps=30,format=yuv420p", "-c:v", "libx264",
+                                        "-preset", "veryfast", "-crf", "26", "-movflags", "+faststart", str(out)],
+                                       capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    if r.returncode != 0 or not out.exists():
+                        out.unlink(missing_ok=True)
+                        return {"error": "не получилось подготовить предпросмотр камеры"}
+                return {"url": media_url(out)}
+        return {"error": "нет файла камеры"}
+    if d.get("act") in ("q_add", "q_cam", "q_del"):   # очередь профиля «Реакции»: видео (ссылка/файл) + своя камера
+        q = _rxq()
+        if d["act"] == "q_add":
+            have = {x["src"] for x in q}
+            cam = d.get("cam") if d.get("cam") and Path(d["cam"]).exists() else ""   # камеру выбрали до ссылки
+            for u in [u.strip() for u in d.get("urls") or [] if u.strip()]:
+                if u not in have:
+                    item = {"id": secrets.token_hex(4), "src": u, "cam": cam, "done": False}
+                    if cam and isinstance(d.get("crop"), dict):      # подрезка заранее выбранной камеры
+                        c = d["crop"]
+                        item["crop"] = {"z": min(3.0, max(1.0, float(c.get("z") or 1))),
+                                        "x": min(1.0, max(0.0, float(c.get("x", 0.5)))),
+                                        "y": min(1.0, max(0.0, float(c.get("y", 0.5))))}
+                    q.append(item)
+                    cam = ""                     # заранее выбранная камера — к первому новому видео
+        elif d["act"] == "q_cam":
+            got = ask_files("video")
+            for x in q:
+                if x["id"] == d.get("id") and got:
+                    x["cam"] = got[0]
+        else:
+            q = [x for x in q if x["id"] != d.get("id")]
+        (BASE / "reaction_queue.json").write_text(json.dumps(q, ensure_ascii=False, indent=1), encoding="utf-8")
+        return {"queue": q}
+    if d.get("ids"):                             # нарезать выбранные из очереди: у каждого видео своя камера
+        q = {x["id"]: x for x in _rxq()}
+        items = [q[i] for i in d["ids"] if i in q and q[i].get("cam")]
+        d = dict(d, cams=[x["cam"] for x in items], videos=[x["src"] for x in items], crops=[x.get("crop") for x in items])
+    if d.get("act") == "stop":
+        VOD["stop"] = True
+        return {"ok": True}
+    if VOD["busy"]:
+        return {"error": "Сейчас уже идёт нарезка: дождись конца или останови её в панели «Монтаж»."}
+    cams = [c for c in d.get("cams") or [] if Path(c).exists()]
+    vids = [v.strip() for v in d.get("videos") or [] if v.strip()]
+    crops = d.get("crops") or []
+    if not cams or len(cams) != len(vids):
+        return {"error": f"Нужно поровну: камер {len(cams)}, видео {len(vids)}. Первая камера идёт к первому видео."}
+    xy = d.get("sub_xy")                         # своё место субтитров из макета: доли кадра (центр слова)
+    xy = [min(.85, max(.15, float(xy[0]))), min(.94, max(.06, float(xy[1])))] if isinstance(xy, list) and len(xy) == 2 else None
+    opts = {"subs": bool(d.get("subs", True)), "sub_pos": d.get("sub_pos") or "bottom", "sub_xy": xy, "font": d.get("font") or None,
+            "banner": d.get("banner") or None}
+    n = max(1, min(10, int(d.get("n") or 5)))
+    saved = dict(opts, n=n)                      # профиль запоминает баннер, субтитры, шрифт и число роликов
+    try:
+        path = BASE / "montage.json"
+        j = json.loads(path.read_text(encoding="utf-8"))
+        j["reaction_opts"] = saved
+        path.write_text(json.dumps(j, ensure_ascii=False, indent=2), encoding="utf-8")
+        A.cfg["reaction_opts"] = saved
+    except (OSError, ValueError):
+        pass
+    jid = "rx" + secrets.token_hex(3)
+    with A.lock:
+        def _nm(s):                              # короткое имя видео/файла для панели
+            return (re.sub(r"^https?://(www\.)?", "", s).split("\\")[-1])[:38]
+        A.job_list.append({"id": jid, "streamer": "Реакция", "title": f"{len(cams)} видео",
+                           "fmt": _nm(vids[0]) + (f" и ещё {len(vids) - 1}" if len(vids) > 1 else ""),
+                           "style": f"{len(cams)} видео · по {n} роликов", "state": "run", "stage": "начинаю", "start": time.time(),
+                           "end": None, "out": None, "vod": True})
+    VOD.update(busy=True, stop=False)
+
+    def say(t, pct=None):
+        A.log("реакция: " + t)
+        with A.lock:
+            for j in A.job_list:
+                if j["id"] == jid:
+                    j["stage"] = t[:140]
+                    if pct is not None:
+                        j["pct"] = max(j.get("pct") or 0, int(pct))
+
+    def work():
+        import reaction
+        made, err = 0, ""
+        for k, (cam, vid) in enumerate(zip(cams, vids), 1):
+            if VOD["stop"]:
+                break
+            say(f"видео {k} из {len(cams)}: {_nm(vid)} + камера {Path(cam).name}")
+            try:
+                crop = crops[k - 1] if k - 1 < len(crops) else None
+                made += len(reaction.run(cam, vid, n, dict(opts, cam_crop=crop), A.cfg,
+                                         say=lambda t, k=k: say(f"видео {k} из {len(cams)} · {t}", _rx_pct(k, len(cams), t)),
+                                         should_stop=lambda: VOD["stop"]))
+                q = _rxq()                       # отмечаем в очереди: это видео нарезано
+                for x in q:
+                    if x["src"] == vid:
+                        x["done"] = True
+                (BASE / "reaction_queue.json").write_text(json.dumps(q, ensure_ascii=False, indent=1), encoding="utf-8")
+            except reaction.Stop as e:
+                err = str(e)
+                say(f"видео {k}: {e}")
+            except BaseException as e:
+                err = str(e)
+                say(f"видео {k}: ошибка {e}")
+        with A.lock:
+            for j in A.job_list:
+                if j["id"] == jid:
+                    j.update(state="done" if made else "error", end=time.time(),
+                             stage=f"готово: роликов {made}, папка clips/ready/reaction" if made else j["stage"])
+        VOD["busy"] = False
+        A.refresh()
+        A.toast(f"Реакции готовы: {made} роликов, они в Telegram и в папке reaction" if made
+                else f"Реакции не получились: {err[:120]}", ok=bool(made))
+
+    threading.Thread(target=work, daemon=True).start()
+    return {"ok": True}
+
+
 def vod_req(d):
     """Нарезка стрима: ссылка или файл, сколько фрагментов. Идёт в фоне, ход виден в панели «Монтаж»."""
     if d.get("act") == "stop":
@@ -1097,7 +1270,7 @@ def cleanup_loop():
 def auto_find_loop():
     time.sleep(3)
     while not A.quit.is_set():
-        if A.cfg.get("mode") == "blogger":       # профиль монтажа блогера: клипы с Twitch не ищем
+        if A.cfg.get("mode") in ("blogger", "reaction"):   # блогер и реакции: клипы с Twitch не ищем
             return
         if not rv.needs_setup():
             find_clips()
@@ -1351,6 +1524,13 @@ def settings(d):
             return {"error": "Без ключей Twitch клипы не ищутся: заполни оба поля."}
         rv.save_keys((d.get("cid") or "").strip(), (d.get("sec") or "").strip(), (d.get("claude") or "").strip(),
                      (d.get("tg") or "").strip())
+        key = (d.get("claude") or "").strip()
+        if key and not ROLE["child"]:            # профили берут ключ из главного при создании — новый тоже раздаём,
+            for _, pd in all_profile_dirs():     # иначе DOTA и Мурчик остаются со старым и падают с 401
+                try:
+                    (pd / "claude_key.txt").write_text(key, encoding="ascii", errors="ignore")
+                except OSError:
+                    pass
         A.toast("Ключи сохранены")
         if not blog:
             find_clips()
@@ -1969,6 +2149,7 @@ ACTIONS = {
     "montage": montage_req,
     "skip": skip_req,
     "vod": vod_req,
+    "reaction": reaction_req,
     "find": lambda d: find_clips(),
     "add_files": lambda d: add_files(),
     "clear_caps": clear_caps,

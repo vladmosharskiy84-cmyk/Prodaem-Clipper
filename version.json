@@ -1,22 +1,23 @@
 {
-  "version": "2026.11.05 09:48",
-  "time": 1793864910.3418698,
-  "notes": "Исправление субтитров через Claude снова работает (и заголовки, камера, критик); обновления больше не падают «скачался не полностью»; ролики из запаса не теряются; битые клипы перекачиваются",
+  "version": "2026.11.08 16:41",
+  "time": 1794148896.74961,
+  "notes": "Реакции: стиль карточек как в Dota, видео крупнее; ролики до 2 минут с одним баннером в середине (видео на паузе); жёлтые субтитры Rubik Bold, их можно перетаскивать; подрезка камеры; проценты и сколько осталось в панели Монтаж; баннеры из папки программы видны во всех профилях",
   "files": {
-    "montage.py": "ae2343b9d16cf217e1a344071ee4543f174fb5b900fcc061af3070347753cee4",
+    "montage.py": "9007b3dc767a87e77670d96102a6c3e84e1f97c71d1f603a988784da9741e3c9",
     "review.py": "0f7d8b02231a9bd13f74d8625147bec9661fc46bf76461661dafc8d598c7f04c",
     "top5.py": "d70f586b96f327d8cbcc08d8959d494cf5cc450138498038d33afc8e9460cc67",
     "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
     "clipfinder.py": "0cd908d65261037025109ab958809f78df8cf0984b47e1441137a6888cbe0e25",
-    "updater.py": "770ac30a48b5f381a34c3a7c323289d8618ad2c88ebdb6969a1bcb27e8cb05c9",
-    "webapp.py": "89a0e0b180823ffaf21930b33b7b34e4e4e9dd54fc0bb9ab74c6ed59361568c8",
-    "ui.html": "5879861ec305e414cb18ec19b8d34f1ad322fb1fb7308a6965fffbd094c6f2d6",
+    "updater.py": "e3ccde0f920912dc9c6b25b44cc6aee451519d3f7a68e479faf0ab4e1d193f3a",
+    "webapp.py": "687eb3aaeb6541a40f16c4c5d27b1fc90901cc867958e05d4602dc97bace20ac",
+    "ui.html": "cfe13a92ffffec7e633ef805a3cfa5f9846e668bb16d1a2d9a353f2b11b2582d",
     "logo_src.png": "e43b51bb73da86652be2c2adac971e5b39557d895d84a4c2449e9b99f95c1739",
-    "highlights.py": "cfd1c971d69f122c7adcc8eab37aaf9aeca38a00e415227812267f50bd530898",
+    "highlights.py": "1e9b6942cfbc2de55466c191e0d50fe8db23d159e5ae78d98fcb826623e5091d",
     "accounts.py": "7a8d5d533418f0168a18b4942ad09cd0de1b7473d55695197f222b64aa57c17b",
     "agents.py": "08803606e98c469d892fcde27d0a095b57f5753ccd4c426ba7cb1afaf53a44d3",
     "leaders.py": "06951d301f174cb68aed842807048974977038e49ae9439738ac155ab69a7dc1",
     "tgbot.py": "3f1b7305dbb32ee153741b736f2fb3a75a6e168b911d1e57dc51dbabdf2a7619",
-    "blogger.py": "0a714d1dff46b2deb9b5d7ed7f085e4537038037dd76a49c41f8b59af5ddeac0"
+    "blogger.py": "0a714d1dff46b2deb9b5d7ed7f085e4537038037dd76a49c41f8b59af5ddeac0",
+    "reaction.py": "fa7e89aff7af8da5b6b8b3e4fdb96ae9846d2a6ba767ae3f1a894b38fc030c64"
   }
 }

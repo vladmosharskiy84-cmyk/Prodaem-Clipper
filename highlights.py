@@ -290,7 +290,7 @@ PROMPT = """Ты монтажёр коротких вертикальных ро
 непонятная игровая ситуация без реакции, оборванная мысль.
 
 Для каждого выбранного укажи точные границы внутри окна кандидата: начало на начале фразы, которая
-вводит в ситуацию, конец сразу после реакции или панчлайна. Длина от 15 до 60 секунд.
+вводит в ситуацию, конец сразу после реакции или панчлайна. Длина от {lmin} до {lmax} секунд.
 
 Ответ только JSON-массивом, лучшие первыми:
 [{{"id": номер кандидата, "start": секунда, "end": секунда, "title": "заголовок на {lang}, 2-6 слов, капсом",
@@ -299,7 +299,7 @@ PROMPT = """Ты монтажёр коротких вертикальных ро
 {cands}"""
 
 
-def ask_claude(cands, info, n, cfg):
+def ask_claude(cands, info, n, cfg, length=(15, 60)):
     if not m.KEY_FILE.exists():
         return None
     key = m.KEY_FILE.read_text(encoding="utf-8-sig").strip()
@@ -321,7 +321,7 @@ def ask_claude(cands, info, n, cfg):
             lines.append(f"  [{t0:.1f}] {' '.join(cur)}")
         blocks.append(f"Кандидат {c['id']}: окно {c['a']:.0f}–{c['b']:.0f} с, сигналы: {c['why']}\n"
                       + ("\n".join(lines) if lines else "  (речи почти нет)"))
-    text = PROMPT.format(k=len(cands), n=n, channel=info.get("channel") or "стримера", title=info.get("title", "")[:80],
+    text = PROMPT.format(k=len(cands), n=n, lmin=length[0], lmax=length[1], channel=info.get("channel") or "стримера", title=info.get("title", "")[:80],
                          lang="английском" if m.lang() == "en" else "русском", cands="\n\n".join(blocks))[:60000]
     try:
         r = requests.post("https://api.anthropic.com/v1/messages",
