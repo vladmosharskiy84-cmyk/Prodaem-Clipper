@@ -18,6 +18,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 import highlights as H
@@ -30,9 +32,11 @@ CAM_BOX = (48, 100, 984, 444, 40)               # x, y, ширина, высот
 VID_BOX = (48, 574, 984, 1272, 40)              # до 1846 — как в Dota
 CAM_H = CAM_BOX[1] + CAM_BOX[3]
 VID_H = VID_BOX[3]
-# условия баннерки для реакций: ролик до 2 минут, один баннер в середине (пауза ~4 с входит в эти 2 минуты)
-PART_MIN, PART_MAX = 45, 115
-WIN_BEFORE, WIN_AFTER = 80, 50                  # окно кандидата вокруг пика: ~2 мин, чтобы было из чего собрать часть
+# условия баннерки для реакций: ролик до 2 минут, один баннер в середине (пауза ~4 с входит в эти 2 минуты).
+# Из видео берём лучший кусок подряд (n частей × PART_LEN, при 5 частях ~10 мин) и режем встык: часть 2 начинается
+# там, где закончилась часть 1. Реклама блогера (SponsorBlock + проверка Claude по расшифровке) вырезается.
+PART_LEN = 115
+SNAP = 6.0                                      # границу частей двигаем в паузу между словами не дальше чем на 6 с
 OUT = BASE / "clips" / "ready" / "reaction"
 TMP = BASE / "cache" / "reaction"
 NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -152,6 +156,128 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     path.write_text(head + "\n".join(ev) + "\n", encoding="utf-8")
 
 
+def sponsor_ads(src):
+    """Рекламные вставки из SponsorBlock (зрители сами отмечают их в роликах YouTube). Пусто — не YouTube или нет данных."""
+    mt = re.search(r"(?:v=|youtu\.be/|shorts/|live/)([\w-]{11})", str(src))
+    if not mt:
+        return []
+    url = "https://sponsor.ajay.app/api/skipSegments?" + urllib.parse.urlencode(
+        {"videoID": mt.group(1), "categories": json.dumps(["sponsor", "selfpromo"])})
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "prodaem-clipper"}), timeout=15) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except Exception:                            # 404 — для ролика ничего не отмечено
+        return []
+    return [(float(x["segment"][0]), float(x["segment"][1])) for x in data if x.get("segment")]
+
+
+def _merge(iv):
+    out = []
+    for a, b in sorted((float(a), float(b)) for a, b in iv if float(b) > float(a)):
+        if out and a <= out[-1][1] + 1:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
+
+class _Clean:
+    """Время видео без рекламы: «секунда видео ↔ секунда без рекламы» и куски видео для отрезка без рекламы."""
+    def __init__(self, dur, ads):
+        self.ads = _merge([(max(0.0, a), min(dur, b)) for a, b in ads])
+        self.spans, t = [], 0.0
+        for a, b in self.ads:
+            if a > t:
+                self.spans.append((t, a))
+            t = max(t, b)
+        if dur > t:
+            self.spans.append((t, dur))
+        self.total = sum(b - a for a, b in self.spans)
+
+    def in_ad(self, t):
+        return any(a <= t < b for a, b in self.ads)
+
+    def to_clean(self, t):
+        c = 0.0
+        for a, b in self.spans:
+            if t < a:
+                return c
+            if t <= b:
+                return c + t - a
+            c += b - a
+        return c
+
+    def pieces(self, ca, cb):
+        out, c = [], 0.0
+        for a, b in self.spans:
+            lo, hi = max(ca, c), min(cb, c + (b - a))
+            if hi > lo:
+                out.append((a + lo - c, a + hi - c))
+            c += b - a
+        return out
+
+
+ADS_PROMPT = """Ниже расшифровка куска видео блогера с отметками времени [секунды от начала видео]. Название: «{title}».
+1) Найди рекламные вставки: блогер рекламирует сервис, приложение, магазин, букмекера или казино, курс, VPN, промокод,
+«спонсор этого видео», «ссылка в описании», зовёт перейти, скачать или зарегистрироваться ради партнёра.
+Обычный разговор, мнение о вещи по теме видео, просьба подписаться или поставить лайк — НЕ реклама.
+Для каждой вставки — начало и конец в секундах, с запасом, чтобы вставка попала целиком.
+2) Придумай общий заголовок серии роликов по этому куску: 2–6 слов, капсом, на русском, правдиво, без кликбейта-лжи.
+Ответ только JSON: {{"ads": [[начало, конец], ...], "title": "..."}}"""
+
+
+def find_ads(words, cfg, title_hint=""):
+    """Claude читает расшифровку куска и отмечает рекламу блогера; заодно — заголовок серии. {} — если не вышло."""
+    if not words or not m.KEY_FILE.exists():
+        return {}
+    key = m.KEY_FILE.read_text(encoding="utf-8-sig").strip()
+    lines, cur, t0 = [], [], None
+    for w in words:
+        if t0 is None:
+            t0 = w["s"]
+        cur.append(w["t"])
+        if w["t"][-1:] in ".!?…" or len(cur) >= 16:
+            lines.append(f"[{t0:.0f}] {' '.join(cur)}")
+            cur, t0 = [], None
+    if cur:
+        lines.append(f"[{t0:.0f}] {' '.join(cur)}")
+    text = ADS_PROMPT.format(title=title_hint[:80]) + "\n\n" + "\n".join(lines)[:60000]
+    try:
+        import requests
+        r = requests.post("https://api.anthropic.com/v1/messages",
+                          headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+                          json={"model": cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 1500,
+                                "messages": [{"role": "user", "content": text}]}, timeout=120)
+        if r.status_code != 200:
+            return {}
+        out = "".join(b.get("text", "") for b in r.json()["content"] if b.get("type") == "text")
+        d = json.loads(out[out.index("{"):out.rindex("}") + 1])
+    except Exception:
+        return {}
+    ads = []
+    for x in d.get("ads") or []:
+        try:
+            a, b = float(x[0]), float(x[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if b - a >= 3:
+            ads.append((a - 1.0, b + 1.0))
+    return {"ads": ads, "title": str(d.get("title") or "").strip()[:60]}
+
+
+def join_pieces(video, pieces, out):
+    """Часть, внутри которой была реклама: склеиваем куски видео без неё (картинка и звук вместе)."""
+    s0 = max(0.0, pieces[0][0] - 1.0)
+    fc = [f"[0:v]trim={a - s0:.3f}:{b - s0:.3f},setpts=PTS-STARTPTS[v{i}];"
+          f"[0:a]atrim={a - s0:.3f}:{b - s0:.3f},asetpts=PTS-STARTPTS[a{i}]" for i, (a, b) in enumerate(pieces)]
+    fc.append("".join(f"[v{i}][a{i}]" for i in range(len(pieces))) + f"concat=n={len(pieces)}:v=1:a=1[v][a]")
+    r = _run(["ffmpeg", "-v", "error", "-y", "-ss", f"{s0:.3f}", "-i", str(video), "-filter_complex", ";".join(fc),
+              "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "16",
+              "-c:a", "aac", "-b:a", "192k", str(out)])
+    if r.returncode != 0 or not out.exists():
+        raise Stop("не получилось вырезать рекламу из части: " + (r.stderr or "")[-200:])
+
+
 def pause_point(words, dur):
     """Где поставить ролик на паузу под баннер: ближе к середине, в промежутке между словами (не посреди фразы)."""
     mid = dur / 2
@@ -170,7 +296,7 @@ def render(cam, video, a, b, offset, out, label, words, opts, cfg):
                opts.get("sub_xy") if opts.get("sub_pos") == "custom" else None)
     # камера — это просто Влад, который смотрит: идёт с начала как есть, а если короче ролика — по кругу
     inputs = ["-ss", f"{a:.2f}", "-t", f"{dur:.2f}", "-i", str(video),
-              "-stream_loop", "-1", "-t", f"{dur:.2f}", "-i", str(cam)]
+              "-stream_loop", "-1", "-ss", f"{max(0.0, offset):.2f}", "-t", f"{dur:.2f}", "-i", str(cam)]   # камера с того места, где закончилась прошлая часть
     cc = opts.get("cam_crop") or {}              # подрезка камеры из окна: масштаб и сдвиг (0..1) внутри верхней части
     z = min(3.0, max(1.0, float(cc.get("z") or 1)))
     px = min(1.0, max(0.0, float(cc.get("x", 0.5))))
@@ -248,80 +374,103 @@ def run(cam, video_src, n=5, opts=None, cfg=None, say=print, should_stop=lambda:
     loud = H.loudness_curve(wav)
     score, parts = H.score_curve(loud, [], [], None, len(loud))
     import numpy as np
-    score = np.asarray(score)
-    score[:int(lo) + 5] = -1e9
-    score[max(0, int(hi) - 5):] = -1e9
-    peaks = H.pick_peaks(score, max(8, n * 2), gap=90)    # части длинные (до 2 мин): кандидатов меньше, они дальше друг от друга
-    if not peaks:
-        raise Stop("не нашёл заметных моментов")
-    cands, tmp = [], TMP / f"cand_{tag}.wav"
-    ck = TMP / f"cands2_{re.sub(r'[^\w-]+', '_', video.stem)[:60]}.json"   # распознанная речь: повтор того же видео не ждёт снова
+    score = np.asarray(score, dtype=float)
+    ads = _merge(sponsor_ads(video_src))
+    if ads:
+        say(f"реклама по SponsorBlock: {len(ads)} вставок — вырезаю")
+    tmp = TMP / f"cand_{tag}.wav"
+    ck = TMP / f"words_{re.sub(r'[^\w-]+', '_', video.stem)[:60]}.json"   # распознанная речь по кускам: повтор не ждёт
     try:
-        cached = {int(c["peak"]): c for c in json.loads(ck.read_text(encoding="utf-8"))}
-    except (OSError, ValueError, KeyError, TypeError):
-        cached = {}
-    for k, pk in enumerate(peaks):
-        if should_stop():
-            raise Stop("остановлено")
-        if int(pk) in cached:
-            cands.append(dict(cached[int(pk)], id=k + 1))
-            say(f"распознаю речь: {k + 1} из {len(peaks)} (уже было)")
-            continue
-        a, b = max(lo, pk - WIN_BEFORE), min(hi, pk + WIN_AFTER)
-        H.cut_wav(wav, a, b, tmp)
-        tmp.with_suffix(".words.json").unlink(missing_ok=True)
-        words = [dict(w, s=w["s"] + a, e=w["e"] + a) for w in m.transcribe(tmp, cfg)]
-        tmp.with_suffix(".words.json").unlink(missing_ok=True)
-        cands.append({"id": k + 1, "peak": int(pk), "a": float(a), "b": float(b), "words": words,
-                      "why": H.describe(pk, parts), "power": float(score[pk])})
-        say(f"распознаю речь: {k + 1} из {len(peaks)}")
-        try:                                     # сохраняем после каждого куска: если упадёт дальше, не потеряем
-            ck.write_text(json.dumps(cands, ensure_ascii=False), encoding="utf-8")
-        except (OSError, TypeError, ValueError):
-            pass
-    tmp.unlink(missing_ok=True)
-
-    say("выбираю лучшие моменты…")
-    chosen = []
-    byid = {c["id"]: c for c in cands}
-    for p in H.ask_claude(cands, {"channel": "", "title": title}, n, cfg, length=(PART_MIN, PART_MAX)) or []:
-        c = byid.get(int(p.get("id", 0) or 0))
-        if not c:
-            continue
-        a = max(lo, float(p.get("start", c["a"])))
-        b = min(hi, float(p.get("end", c["b"])), a + PART_MAX)   # часть до 2 минут вместе с паузой под баннер
-        if b - a >= 20 and all(b <= x["a"] or a >= x["b"] for x in chosen):
-            chosen.append({"a": a, "b": b, "c": c, "title": str(p.get("title", "")).strip(),
-                           "score": int(p.get("score") or 50)})
-    if not chosen:                               # без Claude: самые сильные места
-        for c in sorted(cands, key=lambda c: -c["power"]):
-            a, b = H.snap(c["words"], c["peak"] - 70, c["peak"] + 35)
-            a, b = max(lo, a), min(hi, b, a + PART_MAX)
-            if b - a >= 20 and all(b <= x["a"] or a >= x["b"] for x in chosen):
-                chosen.append({"a": a, "b": b, "c": c, "title": "", "score": 50})
-    chosen = sorted(chosen[:n], key=lambda x: x["a"])        # части по порядку просмотра
-    if not chosen:
-        raise Stop("не нашёл подходящих моментов")
+        wcache = json.loads(ck.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        wcache = {}
+    start_t, ser_title, words = None, "", []
+    for attempt in range(3):                     # нашлась реклама — вырезаем её и добираем длину дальше по видео
+        tl = _Clean(vdur, ads)
+        cnt = max(1, min(n, int(tl.total // PART_LEN))) if tl.total >= PART_LEN else 1
+        need = min(tl.total, cnt * PART_LEN)
+        if start_t is None:                      # лучший кусок подряд: сумма «силы момента» по секундам без рекламы
+            sec = np.array([s for s in range(min(int(vdur), len(score))) if not tl.in_ad(s + 0.5)], dtype=int)
+            vals = np.clip(score[sec], -50, None) if len(sec) else np.zeros(1)
+            w = max(1, int(min(len(vals), need)))
+            csum = np.concatenate([[0.0], np.cumsum(vals)])
+            k = int(np.argmax(csum[w:] - csum[:-w])) if len(vals) > w else 0
+            start_t = float(sec[k]) if len(sec) else 0.0
+        c0 = max(0.0, min(tl.to_clean(start_t), tl.total - need))
+        c1 = c0 + need
+        chunks = []                              # речь распознаём кусками по 2 мин (с запасом под границы частей)
+        for a, b in tl.pieces(max(0.0, c0 - SNAP), min(tl.total, c1 + SNAP)):
+            x = a
+            while x < b - 0.5:
+                chunks.append((x, min(b, x + 120)))
+                x += 120
+        for i, (a, b) in enumerate(chunks):
+            if should_stop():
+                raise Stop("остановлено")
+            key = f"{a:.1f}-{b:.1f}"
+            if key not in wcache:
+                H.cut_wav(wav, a, b, tmp)
+                tmp.with_suffix(".words.json").unlink(missing_ok=True)
+                wcache[key] = [dict(w, s=w["s"] + a, e=w["e"] + a) for w in m.transcribe(tmp, cfg)]
+                tmp.with_suffix(".words.json").unlink(missing_ok=True)
+                try:
+                    ck.write_text(json.dumps(wcache, ensure_ascii=False), encoding="utf-8")
+                except (OSError, TypeError, ValueError):
+                    pass
+            say(f"распознаю речь: {i + 1} из {len(chunks)}")
+        words = sorted((w for a, b in chunks for w in wcache[f"{a:.1f}-{b:.1f}"]), key=lambda w: w["s"])
+        words = [w for w in words if not tl.in_ad((w["s"] + w["e"]) / 2)]
+        say("выбираю лучшие моменты: проверяю, нет ли рекламы…")
+        found = find_ads(words, cfg, title_hint=opts.get("title") or video.stem)
+        ser_title = found.get("title") or ser_title
+        new = [(a, b) for a, b in found.get("ads", []) if not any(x <= a + 1 and b - 1 <= y for x, y in ads)]
+        if not new:
+            break
+        say(f"нашёл рекламу блогера: {len(new)} вставок — вырезаю и добираю длину")
+        ads = _merge(ads + new)
+    tl = _Clean(vdur, ads)
+    words = [w for w in words if not tl.in_ad((w["s"] + w["e"]) / 2)]
+    cw = [dict(w, s=tl.to_clean(w["s"]), e=tl.to_clean(w["e"])) for w in words]   # слова во «времени без рекламы»
+    bounds = [c0 + i * PART_LEN for i in range(cnt + 1)]
+    bounds[-1] = min(bounds[-1], tl.total)
+    gaps = [(x["e"] + y["s"]) / 2 for x, y in zip(cw, cw[1:]) if y["s"] - x["e"] >= 0.25]
+    for i in range(len(bounds)):                 # граница — в паузу между словами, а не посреди фразы
+        near = [g for g in gaps if abs(g - bounds[i]) <= SNAP and (i == 0 or g > bounds[i - 1] + 20)]
+        if near:
+            bounds[i] = min(near, key=lambda g: abs(g - bounds[i]))
+    title = ser_title or title
 
     OUT.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%m%d_%H%M")
-    made = []
-    for i, ch in enumerate(chosen, 1):
+    made, cam_off, cam_dur = [], 0.0, max(1.0, m.probe(cam)["dur"])
+    for i in range(cnt):                         # части встык: часть i+1 начинается там, где закончилась часть i
         if should_stop():
             raise Stop("остановлено")
-        say(f"монтирую часть {i} из {len(chosen)}")
-        a, b = ch["a"], ch["b"]
-        words = [dict(w, s=w["s"] - a, e=w["e"] - a) for w in ch["c"]["words"] if a <= w["s"] and w["e"] <= b]
-        out = OUT / f"{re.sub(r'[^\w-]+', '_', title)[:40]}_{stamp}_p{i}.mp4"
-        render(cam, video, a, b, offset, out, "", words, opts, cfg)
+        say(f"монтирую часть {i + 1} из {cnt}")
+        ca, cb = bounds[i], bounds[i + 1]
+        if cb - ca < 10:
+            continue
+        pw = [dict(w, s=w["s"] - ca, e=w["e"] - ca) for w in cw if ca <= w["s"] and w["e"] <= cb]
+        out = OUT / f"{re.sub(r'[^\w-]+', '_', title)[:40]}_{stamp}_p{i + 1}.mp4"
+        pieces = tl.pieces(ca, cb)
+        if len(pieces) == 1:
+            render(cam, video, pieces[0][0], pieces[0][1], cam_off, out, "", pw, opts, cfg)
+        else:                                    # внутри части была реклама: склеиваем куски без неё
+            src = TMP / f"part_{tag}.mp4"
+            join_pieces(video, pieces, src)
+            render(cam, src, 0.0, cb - ca, cam_off, out, "", pw, opts, cfg)
+            src.unlink(missing_ok=True)
+        cam_off = (cam_off + (cb - ca)) % cam_dur  # камера идёт дальше, а не с начала
         hashtags = "#реакция " + m.base_tags()
-        out.with_suffix(".txt").write_text(f"{ch['title']}\n\n{hashtags}\n", encoding="utf-8")
+        cap = f"{title} — часть {i + 1}" if cnt > 1 else title
+        out.with_suffix(".txt").write_text(f"{cap}\n\n{hashtags}\n", encoding="utf-8")
         if send:
-            p = {"clip_id": out.stem, "file_out": str(out), "streamer": "реакция", "final_title": ch["title"],
-                 "description": "", "potential": ch["score"], "format": "reaction",
+            p = {"clip_id": out.stem, "file_out": str(out), "streamer": "реакция", "final_title": cap,
+                 "description": "", "potential": 60, "format": "reaction",
                  "duration": round(m.probe(out)["dur"])}          # подпись в Telegram ждёт формат и длину
             m.tg_send(out, p, hashtags, "manual")
         made.append(out)
+    tmp.unlink(missing_ok=True)
     wav.unlink(missing_ok=True)
     return made
 
