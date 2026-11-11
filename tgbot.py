@@ -210,13 +210,15 @@ def allowed_chats():
 
 def _profile_roots():
     """Папки всех профилей рядом: «clipper_p1» у Влада и «PRODAEM CLIPPER_p1» у тех, кто ставил установщиком."""
-    roots = {BASE}
-    try:
-        base = BASE.name.lower()
-        roots |= {p for p in BASE.parent.iterdir() if p.is_dir() and
-                  (p.name.lower().startswith("clipper") or p.name.lower().startswith(base + "_"))}
-    except Exception:
-        pass
+    main = getattr(m, "CODE", BASE)               # папка программы = основной профиль; команда может прийти в процесс любого профиля
+    roots = {BASE, main}
+    for d in {BASE, main}:
+        try:
+            base = d.name.lower()
+            roots |= {p for p in d.parent.iterdir() if p.is_dir() and
+                      (p.name.lower().startswith("clipper") or p.name.lower().startswith(base + "_"))}
+        except Exception:
+            pass
     return roots
 
 
@@ -234,7 +236,7 @@ def _profile_name(r):
         mode = json.loads((r / "montage.json").read_text(encoding="utf-8")).get("mode") or ""
     except (OSError, ValueError):
         mode = ""
-    return name or ("основной" if r == BASE else r.name), mode
+    return name or ("основной" if r == getattr(m, "CODE", BASE) else r.name), mode
 
 
 ALIASES = {"reaction": ("реакц", "реакт", "react"), "blogger": ("мурчик", "блогер", "murchik", "blog")}
@@ -257,7 +259,7 @@ def set_topic(token, chat_id, thread, want):
         hit = bool(want) and (want in name.lower() or name.lower() in want or
                               any(a in want for a in ALIASES.get(mode, ())) or
                               any(a in want for a in NAME_ALIASES.get(name.lower(), ())) or
-                              (want in ("основной", "клипы", "main") and r == BASE))
+                              (want in ("основной", "клипы", "main") and r == getattr(m, "CODE", BASE)))
         if hit:
             (r / "telegram_topics.json").write_text(json.dumps({"chat_id": chat_id, "clips": thread, "manual": thread},
                                                                ensure_ascii=False), encoding="utf-8")
