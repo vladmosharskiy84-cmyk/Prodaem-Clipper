@@ -208,14 +208,67 @@ def allowed_chats():
     return out
 
 
+def _profile_roots():
+    """Папки всех профилей рядом: «clipper_p1» у Влада и «PRODAEM CLIPPER_p1» у тех, кто ставил установщиком."""
+    roots = {BASE}
+    try:
+        base = BASE.name.lower()
+        roots |= {p for p in BASE.parent.iterdir() if p.is_dir() and
+                  (p.name.lower().startswith("clipper") or p.name.lower().startswith(base + "_"))}
+    except Exception:
+        pass
+    return roots
+
+
+def _profile_name(r):
+    """Как зовут профиль и какого он типа: по label.txt/profile.txt и режиму из montage.json."""
+    name = ""
+    for f in ("label.txt", "profile.txt"):
+        try:
+            name = (r / f).read_text(encoding="utf-8-sig").strip()
+            if name:
+                break
+        except OSError:
+            pass
+    try:
+        mode = json.loads((r / "montage.json").read_text(encoding="utf-8")).get("mode") or ""
+    except (OSError, ValueError):
+        mode = ""
+    return name or ("основной" if r == BASE else r.name), mode
+
+
+ALIASES = {"reaction": ("реакц", "реакт", "react"), "blogger": ("мурчик", "блогер", "murchik", "blog")}
+NAME_ALIASES = {"dota": ("дот", "dota"), "реакции": ("реакт", "react"), "мурчик": ("murchik",)}
+
+
+def set_topic(token, chat_id, thread, want):
+    """/here Имя — ролики профиля «Имя» (клипы и свои видео) идут в эту тему группы.
+    Возвращает (найденные имена, все имена профилей с этим ботом)."""
+    want = (want or "").strip().lower()
+    found, names = [], []
+    for r in sorted(_profile_roots()):
+        try:
+            if (r / "telegram_token.txt").read_text(encoding="utf-8-sig").strip() != token:
+                continue
+        except OSError:
+            continue
+        name, mode = _profile_name(r)
+        names.append(name)
+        hit = bool(want) and (want in name.lower() or name.lower() in want or
+                              any(a in want for a in ALIASES.get(mode, ())) or
+                              any(a in want for a in NAME_ALIASES.get(name.lower(), ())) or
+                              (want in ("основной", "клипы", "main") and r == BASE))
+        if hit:
+            (r / "telegram_topics.json").write_text(json.dumps({"chat_id": chat_id, "clips": thread, "manual": thread},
+                                                               ensure_ascii=False), encoding="utf-8")
+            found.append(name)
+    return found, names
+
+
 def set_reserve(token, chat_id, thread=None, fname="telegram_reserve.json"):
     """Запоминает группу («Запас» или «Отчёты») во всех профилях с этим же ботом."""
     n = 0
-    roots = {BASE}
-    try:
-        roots |= {p for p in BASE.parent.iterdir() if p.is_dir() and p.name.lower().startswith("clipper")}
-    except Exception:
-        pass
+    roots = _profile_roots()
     for r in roots:
         tf = r / "telegram_token.txt"
         try:
@@ -238,7 +291,8 @@ HELP = """Команды:
 /report — отчёт цифрами сейчас
 /week — разбор недели от Claude
 /reports — (в отдельной группе) присылать отчёты сюда
-/reserve — (в отдельной группе) присылать сюда ролики «Запас»"""
+/reserve — (в отдельной группе) присылать сюда ролики «Запас»
+/here Имя — (в теме группы) ролики профиля «Имя» присылать в эту тему, например /here Реакции"""
 
 
 def live():
@@ -398,6 +452,19 @@ class Bot:
                 data = {"chat_id": msg0["chat"]["id"], "text": "📊 Готово: сюда будут приходить отчёт каждый день в 22:00, "
                         "разбор недели по понедельникам и сообщения, если программа не работала." + ("" if n else
                         "\n(не нашёл профиль с этим ботом, проверь токен в настройках)")}
+                if msg0.get("message_thread_id"):
+                    data["message_thread_id"] = msg0["message_thread_id"]
+                self._api(token, "sendMessage", **data)
+            return
+        if low0.startswith(("/here", "/сюда")):           # «/here Реакции» в теме группы — профиль шлёт сюда
+            ok_chats = allowed_chats()
+            sender = str((msg0.get("from") or {}).get("id", ""))
+            if not ok_chats or sender in ok_chats or str(msg0["chat"]["id"]) in ok_chats or m.TG_TOPICS.exists():
+                want = (msg0.get("text") or "").split(maxsplit=1)[1] if len((msg0.get("text") or "").split()) > 1 else ""
+                found, names = set_topic(token, msg0["chat"]["id"], msg0.get("message_thread_id"), want)
+                text = (f"✅ Сюда будут приходить ролики профиля: {', '.join(found)}." if found else
+                        "Напиши так: /here Имя профиля. Профили с этим ботом: " + (", ".join(names) or "не нашёл"))
+                data = {"chat_id": msg0["chat"]["id"], "text": text}
                 if msg0.get("message_thread_id"):
                     data["message_thread_id"] = msg0["message_thread_id"]
                 self._api(token, "sendMessage", **data)
