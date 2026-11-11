@@ -212,6 +212,8 @@ input[type=range]{flex:1;accent-color:var(--a1);min-width:140px}
 @keyframes fade{from{opacity:0}}@keyframes fadeout{to{opacity:0}}
 .dlg{background:var(--panel);border:1px solid var(--line);border-radius:20px;width:min(980px,100%);max-width:100%;margin:auto 0;flex-shrink:0;overflow-x:auto;position:relative;padding:22px;box-shadow:0 40px 90px -30px #000;animation:pop .4s var(--ease) both}
 .dlg.narrow{width:min(560px,100%)}
+.newslist{margin:10px 0 0;padding-left:20px;display:grid;gap:8px;line-height:1.5}.newslist li::marker{color:var(--a1)}
+.newsold{margin-top:16px}.newsold summary{cursor:pointer;color:var(--mut);font-size:13px}
 @keyframes pop{from{transform:translateY(16px) scale(.97);opacity:0}}
 .dlg h3{font:700 18px var(--display);margin:0 0 4px;letter-spacing:.02em}
 .dlg .sub{color:var(--mut);margin:0 0 16px;font-size:13px;line-height:1.5}
@@ -354,6 +356,7 @@ body.leaving .app{opacity:0;transform:scale(.985);transition:opacity .35s,transf
     <div class="spacer"></div>
     <div class="profiles" id="profiles"><div class="pill"></div></div>
     <button class="btn" id="upd">Проверить обновления</button>
+    <button class="btn" id="news" title="Что поменялось в обновлениях">Что нового</button>
     <button class="btn" id="keys">Настройки и ключи</button>
   </header>
 
@@ -744,6 +747,15 @@ $("#upd").onclick=async()=>{const b=$("#upd");
   if(r.state==="ready"){S.updReady=true;b.innerHTML='<span class="dot"></span>Установить обновление';toast(r.text);}
   else{b.textContent=r.state==="latest"?"Последняя версия ✓":r.state==="off"?"Обновления не настроены":"Не удалось проверить";if(r.state!=="latest")toast(r.text,false);
     setTimeout(()=>{if(!S.updReady)b.textContent="Проверить обновления"},5000);}};
+/* «Что нового»: описание обновления — само один раз после установки и по кнопке в любой момент */
+function newsList(t){const items=String(t||"").split(/\s*;\s*|\n+/).map(s=>s.trim()).filter(Boolean);
+  return items.length?`<ul class="newslist">${items.map(s=>`<li>${esc(s.charAt(0).toUpperCase()+s.slice(1))}</li>`).join("")}</ul>`:'<p class="note">Описания нет.</p>';}
+function showNews(r,fresh){if(!r||!r.version){toast("Обновлений ещё не ставили — это исходная версия");return}
+  const old=(r.history||[]).filter(h=>h.version!==r.version).slice(0,8);
+  modal(`<h3>${fresh?"Обновление установлено":"Что нового"}</h3><p class="sub">Версия ${esc(r.version)}</p>${newsList(r.notes)}`
+    +(old.length?`<details class="newsold"><summary>Прошлые обновления</summary>${old.map(h=>`<p class="label" style="margin:12px 0 4px">${esc(h.version)}</p>${newsList(h.notes)}`).join("")}</details>`:""),"narrow");}
+$("#news").onclick=async()=>{const r=await api("update",{act:"whatsnew"});if(r.error)return toast(r.error,false);showNews(r,false);};
+setTimeout(async()=>{try{const r=await api("update",{act:"whatsnew"});if(r&&r.fresh&&r.notes)showNews(r,true);}catch(e){}},1500);
 setTimeout(async()=>{const r=await api("update",{act:"check"});if(r.state==="ready"){S.updReady=true;$("#upd").innerHTML='<span class="dot"></span>Установить обновление';toast(r.text);}},6000);
 
 /* ключи */

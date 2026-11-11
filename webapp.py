@@ -2074,6 +2074,11 @@ def heartbeat_loop():
 # обновления
 def update(d):
     import updater
+    if d.get("act") == "whatsnew":               # кнопка «Что нового»: описание установленной версии и прошлых
+        try:
+            return updater.whats_new(mark=True) or {"version": "", "notes": "", "history": []}
+        except Exception as e:
+            return {"error": f"не получилось: {e}"}
     if d.get("act") == "check":
         if A.upd["busy"]:
             return {"busy": True}

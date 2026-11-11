@@ -129,9 +129,54 @@ def apply(info):
         if (BASE / name).exists():
             shutil.copy2(BASE / name, backup / name)          # старую версию можно вернуть из папки backup
         shutil.copy2(tmp / name, BASE / name)
-    STATE_FILE.write_text(json.dumps({"time": info.get("time", 0), "version": info.get("version", "")}), encoding="utf-8")
+    _save_state(info.get("time", 0), str(info.get("version", "")), str(info.get("notes", "")), shown=False)
     shutil.rmtree(tmp, ignore_errors=True)
     return info["changed"]
+
+
+def _load_state():
+    try:
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_state(t, version, notes, shown):
+    """Запоминаем версию и её описание: после перезапуска окно покажет «Что нового», а кнопка — историю."""
+    st = _load_state()
+    hist = [h for h in st.get("history", []) if h.get("version") != version]
+    if version:
+        hist = [{"version": version, "notes": notes}] + hist
+    STATE_FILE.write_text(json.dumps({"time": t, "version": version, "notes": notes, "history": hist[:20],
+                                      "shown": version if shown else st.get("shown")}, ensure_ascii=False),
+                          encoding="utf-8")
+
+
+def whats_new(mark=True):
+    """Что поменялось в установленной версии. {"version", "notes", "history", "fresh"}: fresh — ещё не показывали.
+    Старый обновлятор описание не сохранял — тогда берём его из version.json на GitHub (это и есть эта версия)."""
+    st = _load_state()
+    ver = str(st.get("version") or "")
+    if not ver:
+        return None
+    notes = st.get("notes")
+    if notes is None:
+        try:
+            url = base_url()
+            info = json.loads(_get(pinned(url) + "version.json").decode("utf-8-sig")) if url else {}
+            notes = str(info.get("notes", "")) if str(info.get("version", "")) == ver else ""
+        except Exception:
+            notes = ""
+        hist = [{"version": ver, "notes": notes}] + [h for h in st.get("history", []) if h.get("version") != ver]
+        st.update(notes=notes, history=hist[:20])
+    fresh = st.get("shown") != ver
+    if mark and fresh:
+        st["shown"] = ver
+    try:
+        STATE_FILE.write_text(json.dumps(st, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+    return {"version": ver, "notes": notes or "", "history": st.get("history", []), "fresh": fresh}
 
 
 def make_release(notes=""):
@@ -149,7 +194,7 @@ def make_release(notes=""):
     now = time.time()
     info = {"version": time.strftime("%Y.%m.%d %H:%M"), "time": now, "notes": notes, "files": files}
     (rel / "version.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
-    STATE_FILE.write_text(json.dumps({"time": now, "version": info["version"]}), encoding="utf-8")
+    _save_state(now, info["version"], notes, shown=True)     # автору своё «Что нового» не показываем
     return rel, info
 
 
