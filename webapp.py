@@ -419,6 +419,7 @@ def snapshot(since):
             j["eta"] = int(j["sec"] * (100 - j["pct"]) / j["pct"])
     return {"events": ev, "seq": A.seq, "jobs": jobs, "busy": bool(A.busy) or VOD["busy"] or TT["busy"], "wait": A.jobs.qsize(),
             "done": A.done, "failed": A.failed, "queue_ver": A.queue_ver, "finding": A.finding,
+            "autofind": bool(A.cfg.get("auto_find", True)),
             "render": bool(A.busy) or bool(A.jobs.qsize()) or VOD["busy"], "profile": rv.PROFILE or "",
             "upd": "ready" if A.upd["info"] else ("busy" if A.upd["busy"] else "")}
 
@@ -1272,9 +1273,42 @@ def auto_find_loop():
     while not A.quit.is_set():
         if A.cfg.get("mode") in ("blogger", "reaction"):   # блогер и реакции: клипы с Twitch не ищем
             return
+        if not A.cfg.get("auto_find", True):     # автопоиск выключен в этом профиле: проверяем раз в минуту, не включили ли
+            A.quit.wait(60)
+            continue
         if not rv.needs_setup():
             find_clips()
         A.quit.wait(int(A.cfg.get("interval_min", 120)) * 60)
+
+
+def save_cfg_key(key, value):
+    """Одна настройка профиля в montage.json и сразу в работе."""
+    path = BASE / "montage.json"
+    j = json.loads(path.read_text(encoding="utf-8"))
+    j[key] = value
+    path.write_text(json.dumps(j, ensure_ascii=False, indent=2), encoding="utf-8")
+    A.cfg[key] = value
+
+
+def queue_req(d):
+    """Автопоиск вкл/выкл и очистка очереди найденных клипов (свои файлы не трогаем)."""
+    act = d.get("act")
+    if act == "autofind":
+        save_cfg_key("auto_find", bool(d.get("on")))
+        return {"ok": True, "on": A.cfg["auto_find"]}
+    if act == "clear":
+        with A.lock:
+            own = {o.get("clip_id") for o in A.st.get("own", [])}
+            n = 0
+            for p in A.items:
+                if p.get("clip_id") and p["clip_id"] not in own:
+                    A.st["clips"][p["clip_id"]] = "skipped"
+                    n += 1
+            rv.save_state(A.st)
+        A.refresh()
+        A.log(f"очередь очищена: убрано клипов {n}")
+        return {"ok": True, "n": n}
+    return {}
 
 
 def ask_files(kind):
@@ -1613,6 +1647,104 @@ def banners(d):
 
 
 TT = {"busy": False, "stage": "", "error": "", "ver": 0}
+HQ_CACHE = BASE / "analytics" / "hq_views.json"      # последние цифры с сервера: доска работает и без связи
+
+
+def hq_base():
+    """Адрес сервера HQ из ссылки виджета (/widget в боте HQ): http://хост:порт и ключ. Хранится только на этом ПК."""
+    import accounts
+    link = str(accounts.load_settings().get("hq_link") or "")
+    mt = re.match(r"(https?://[^/?#\s]+)[^?#\s]*\?(?:.*&)?k=([\w\-]+)", link.strip())
+    return (mt.group(1), mt.group(2)) if mt else (None, None)
+
+
+def hq_call(path, data=None, timeout=15):
+    import urllib.request
+    import urllib.error
+    base, key = hq_base()
+    if not base:
+        raise ValueError("не подключён сервер: вставь ссылку из /widget бота HQ")
+    req = urllib.request.Request(f"{base}{path}?k={urllib.parse.quote(key)}",
+                                 data=None if data is None else json.dumps(data).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"}, method="GET" if data is None else "POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raise ValueError("сервер не пустил: проверь ссылку из /widget" if e.code == 403 else f"сервер ответил {e.code}")
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        raise ValueError(f"сервер не отвечает ({getattr(e, 'reason', e)})")
+
+
+def hq_views(fresh=True):
+    """Офферы, аккаунты и просмотры с сервера; без связи — последние сохранённые (с пометкой offline)."""
+    err = ""
+    if fresh:
+        try:
+            data = hq_call("/api/tt")
+            HQ_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            HQ_CACHE.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            return data
+        except ValueError as e:
+            err = str(e)
+    try:                                         # «нет связи» — только если сервер сейчас не ответил
+        data = json.loads(HQ_CACHE.read_text(encoding="utf-8"))
+        data["offline"] = err
+        return data
+    except Exception:
+        return {"offline": err or "ещё нет цифр с сервера", "offers": {}, "accounts": {}, "rows": [], "videos": [],
+                "topics": {}}
+
+
+def today_board(srv):
+    """Доска «Сегодня»: Найдено → Собирается → Готово → Залито и план по аккаунтам."""
+    day = time.strftime("%Y-%m-%d")
+    start = time.mktime(time.strptime(day, "%Y-%m-%d"))
+    with A.lock:
+        items = list(A.items)
+        jobs = [dict(j) for j in A.job_list]
+    found = [{"t": p.get("title") or p.get("streamer") or "клип", "s": p.get("streamer", ""), "score": p.get("score")}
+             for p in items[:40]]
+    build = [{"t": j.get("title") or j.get("fmt") or "", "s": j.get("streamer", ""), "st": j.get("state"),
+              "stage": j.get("stage", ""), "pct": j.get("pct")} for j in jobs if j.get("state") in ("wait", "run")]
+    plan = []
+    try:
+        import agents
+        plan = [x for x in agents._load_schedule() if x.get("day") == day and x.get("status") != "dropped"]
+    except Exception:
+        pass
+    by_file = {str(x.get("file") or ""): x for x in plan}
+    ready = []
+    for js in sorted((BASE / "clips" / "ready").glob("*/*.json"), key=lambda f: f.stat().st_mtime, reverse=True)[:60]:
+        mp4 = js.with_suffix(".mp4")
+        if not mp4.exists() or mp4.stat().st_mtime < start:
+            continue
+        try:
+            p = json.loads(js.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        ag = p.get("agents") or {}
+        pl = by_file.get(str(mp4)) or ag.get("plan") or {}
+        if pl.get("status") == "posted":
+            continue
+        ready.append({"t": p.get("final_title") or p.get("streamer", ""), "s": p.get("streamer", ""), "score": ag.get("score"),
+                      "acc": pl.get("account", ""), "when": pl.get("time") or pl.get("when", "")})
+    vids = [v for v in srv.get("videos") or [] if (v.get("ts") or 0) >= start]
+    posted = [{"t": v.get("desc") or "", "acc": v["acc"], "views": v["views"], "paid": v.get("paid"), "url": v["url"]}
+              for v in sorted(vids, key=lambda v: -v["views"])]
+    accs = {}
+    for h, a in (srv.get("accounts") or {}).items():
+        if a.get("on", True):
+            accs[h] = {"acc": h, "offer": a.get("offer", ""), "plan": 0, "done": 0, "today": 0}
+    for x in plan:
+        r = accs.setdefault(x["account"], {"acc": x["account"], "offer": "", "plan": 0, "done": 0, "today": 0})
+        r["plan"] += 1
+        r["done"] += x.get("status") == "posted"
+    for v in vids:
+        if v["acc"] in accs:
+            accs[v["acc"]]["today"] += 1
+    return {"found": found, "found_n": len(items), "build": build, "ready": ready, "posted": posted,
+            "accounts": list(accs.values())}
 
 
 def tt_req(d):
@@ -1622,6 +1754,35 @@ def tt_req(d):
     except ImportError:
         return {"error": "Для анализа аккаунтов нужен файл accounts.py: поставь обновление программы."}
     act = d.get("act")
+    if act == "views":                           # офферы, аккаунты, деньги и доска «Сегодня»
+        srv = hq_views(fresh=bool(d.get("fresh", True)))
+        return {"srv": srv, "board": today_board(srv), "linked": bool(hq_base()[0])}
+    if act == "hq_link":                         # ссылка из /widget бота HQ: проверяем и запоминаем на этом ПК
+        s = accounts.load_settings()
+        old = s.get("hq_link")
+        s["hq_link"] = str(d.get("link") or "").strip()
+        accounts.save_settings(s)
+        try:
+            hq_call("/api/tt")
+        except ValueError as e:
+            s["hq_link"] = old
+            accounts.save_settings(s)
+            return {"error": str(e)}
+        return {"ok": True}
+    if act == "offers_save":                     # офферы и аккаунты → сервер (темы задаются /tt в группе)
+        try:
+            r = hq_call("/api/tt", {"offers": d.get("offers") or {}, "accounts": d.get("accounts") or {}})
+        except ValueError as e:
+            return {"error": str(e)}
+        if r.get("error"):
+            return r
+        return {"ok": True, "srv": hq_views()}
+    if act == "views_run":                       # собрать просмотры на сервере сейчас
+        try:
+            r = hq_call("/api/tt/run", {})
+        except ValueError as e:
+            return {"error": str(e)}
+        return {"ok": bool(r.get("ok")), "busy": bool(r.get("busy"))}
     if act == "get":
         plan, roles = [], {}
         try:
@@ -2156,6 +2317,7 @@ ACTIONS = {
     "vod": vod_req,
     "reaction": reaction_req,
     "find": lambda d: find_clips(),
+    "qtools": queue_req,
     "add_files": lambda d: add_files(),
     "clear_caps": clear_caps,
     "open_player": lambda d: (open_path(A.item(d["id"])["file"]), {"ok": True})[1],
