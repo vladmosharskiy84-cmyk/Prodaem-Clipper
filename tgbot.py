@@ -216,7 +216,8 @@ def _profile_roots():
         try:
             base = d.name.lower()
             roots |= {p for p in d.parent.iterdir() if p.is_dir() and
-                      (p.name.lower().startswith("clipper") or p.name.lower().startswith(base + "_"))}
+                      (p.name.lower().startswith("clipper") or p.name.lower().startswith(base + "_")
+                       or ((p / "montage.json").exists() and (p / "telegram_token.txt").exists()))}   # профиль по содержимому
         except Exception:
             pass
     return roots
@@ -225,7 +226,8 @@ def _profile_roots():
 def _profile_name(r):
     """Как зовут профиль и какого он типа: по label.txt/profile.txt и режиму из montage.json."""
     name = ""
-    for f in ("label.txt", "profile.txt"):
+    is_main = r == getattr(m, "CODE", BASE)
+    for f in (("label.txt",) if is_main else ("label.txt", "profile.txt")):   # у основного profile.txt бывает старый
         try:
             name = (r / f).read_text(encoding="utf-8-sig").strip()
             if name:
@@ -236,7 +238,7 @@ def _profile_name(r):
         mode = json.loads((r / "montage.json").read_text(encoding="utf-8")).get("mode") or ""
     except (OSError, ValueError):
         mode = ""
-    return name or ("основной" if r == getattr(m, "CODE", BASE) else r.name), mode
+    return name or ("СНГ" if is_main else r.name), mode
 
 
 ALIASES = {"reaction": ("реакц", "реакт", "react"), "blogger": ("мурчик", "блогер", "murchik", "blog")}
@@ -259,7 +261,7 @@ def set_topic(token, chat_id, thread, want):
         hit = bool(want) and (want in name.lower() or name.lower() in want or
                               any(a in want for a in ALIASES.get(mode, ())) or
                               any(a in want for a in NAME_ALIASES.get(name.lower(), ())) or
-                              (want in ("основной", "клипы", "main") and r == getattr(m, "CODE", BASE)))
+                              (want in ("основной", "клипы", "main", "снг", "sng") and r == getattr(m, "CODE", BASE)))
         if hit:
             (r / "telegram_topics.json").write_text(json.dumps({"chat_id": chat_id, "clips": thread, "manual": thread},
                                                                ensure_ascii=False), encoding="utf-8")
