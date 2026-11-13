@@ -1145,7 +1145,7 @@ def pick_accent(clip, cfg):
     """Цвет рамок и второй строки заголовка: свой для каждого ролика, один на все окна ролика."""
     import hashlib
     colors = cfg.get("accent_colors") or ACCENTS
-    hx = colors[int(hashlib.md5(clip.stem.encode("utf-8")).hexdigest(), 16) % len(colors)].lstrip("#")
+    hx = colors[int(hashlib.md5((machine_salt() + clip.stem).encode("utf-8")).hexdigest(), 16) % len(colors)].lstrip("#")
     return tuple(int(hx[i:i + 2], 16) for i in (0, 2, 4))
 
 
@@ -2101,6 +2101,30 @@ def _font_family(key):
     return LOOK_FONTS.get(key) or FONT_LIB.get(key) or (key, 400)
 
 
+def machine_salt():
+    """Своя «соль» у каждого компьютера: от неё зависят стиль субтитров, случайная раскладка, цвет рамок.
+    Друзья льют один оффер — один и тот же клип у каждого выходит по-разному. Стабильна: при пересборке тот же вид."""
+    global _SALT
+    if not _SALT:
+        import hashlib, platform, getpass
+        try:
+            user = getpass.getuser()
+        except Exception:
+            user = ""
+        _SALT = hashlib.md5(f"{platform.node()}|{user}".encode("utf-8")).hexdigest()[:10]
+    return _SALT
+
+
+_SALT = ""
+# «Свой у каждого»: только лёгкие стили по одному слову — правило «Карточек» (чётко, по слову, без дёрганья)
+MINE_LOOKS = [lk["key"] for lk in SUB_LOOKS if lk["anim"] in ("soft", "pop", "glow")]
+
+
+def mine_look(stem):
+    import hashlib
+    return MINE_LOOKS[int(hashlib.md5((machine_salt() + "look" + stem).encode("utf-8")).hexdigest(), 16) % len(MINE_LOOKS)]
+
+
 def looks_public():
     """Стили субтитров для окна-библиотеки: всё, что нужно, чтобы нарисовать карточку на CSS."""
     hx = lambda c: "#{:02X}{:02X}{:02X}".format(*c) if c else None
@@ -2593,7 +2617,7 @@ def pick_satis(clip, cfg, force=False):
     if not files:
         return None
     import hashlib
-    hv = int(hashlib.md5(clip.stem.encode("utf-8")).hexdigest(), 16)
+    hv = int(hashlib.md5((machine_salt() + clip.stem).encode("utf-8")).hexdigest(), 16)   # у друзей другое видео снизу
     if not force and (hv % 100) >= int(float(cfg.get("satis_share", 0)) * 100):
         return None
     return files[(hv // 100) % len(files)]
@@ -2881,7 +2905,7 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
     style = (force or {}).get("style") or cfg.get("style", "classic")
     if style == "random":                        # свой стиль у каждого ролика, при пересборке тот же
         names = [k for k in (cfg.get("styles_on") or STYLES) if k in STYLES] or list(STYLES)   # стили, выбранные в профиле
-        style = names[int(hashlib.md5(("st" + clip.stem).encode("utf-8")).hexdigest(), 16) % len(names)]
+        style = names[int(hashlib.md5(("st" + machine_salt() + clip.stem).encode("utf-8")).hexdigest(), 16) % len(names)]
     if style not in STYLES:
         style = "classic"
     if (force or {}).get("font"):
@@ -2972,6 +2996,8 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
                 ban_cy += 100
             show_title = False
     look_key = (force or {}).get("sub_look") if "sub_look" in (force or {}) else cfg.get("sub_look")
+    if look_key == "mine":                       # свой у каждого ПК: у друзей тот же клип выйдет с другими субтитрами
+        look_key = "" if style == "dota" else mine_look(clip.stem)
     if look_key == "none":                       # библиотека: «Без субтитров»
         cfg = dict(cfg, sub_anim="none")
     elif look_key in LOOK_BY_KEY:                # стиль субтитров из библиотеки поверх стиля монтажа

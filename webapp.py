@@ -339,7 +339,8 @@ def init_data():
             "styles": [["random", "Случайный"]] + [[k, v] for k, v in m.STYLES.items() if k in s_on], "geo": list(m.GEO_STYLES),
             "fonts": m.available_fonts(), "font_lib": {k: list(v) for k, v in m.FONT_LIB.items()}, "style": A.st.get("style_key") or _style_key(A.st.get("style")),
             "anims": [[k, v] for k, v in m.SUB_ANIMS.items()], "anim": A.st.get("sub_anim") or "karaoke",
-            "looks": m.looks_public(), "sub_look": A.st.get("sub_look") or "",
+            "looks": m.looks_public(), "mine_looks": m.MINE_LOOKS,
+            "sub_look": A.st["sub_look"] if "sub_look" in A.st else "mine",   # по умолчанию свой у каждого ПК
             "zoom": A.st.get("zoom", True), "teaser": A.st.get("teaser", True),
             "font": A.st.get("font") if A.st.get("font") in m.available_fonts() else "",
             "banners": banners_short(), "banner_use": A.cfg.get("banner_use"),

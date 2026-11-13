@@ -740,17 +740,19 @@ function fitLookText(root){root.querySelectorAll(".lk-txt").forEach(t=>{const sp
   while(fs>9&&t.scrollWidth>t.clientWidth+1){fs--;t.style.fontSize=fs+"px";}
   if(one)sp.forEach((s,i)=>s.classList.toggle("hl",i===cur));})}
 function lookUI(){const b=$("#lookbtn");if(!b||!S.init)return;const lk=lookOf(S.look),n=(S.init.looks||[]).length;
-  b.innerHTML=S.look==="none"?"Выключены <em>· в ролике только видео и звук</em>":lk?`${esc(lk.name)} <em>· ${esc(lk.family)}</em>`:`Как в стиле монтажа <em>· ещё ${n} ${plural(n,"стиль","стиля","стилей")} в библиотеке</em>`;
+  b.innerHTML=S.look==="none"?"Выключены <em>· в ролике только видео и звук</em>":S.look==="mine"?`Свой у каждого <em>· ${mineNames()} — у друзей тот же клип выйдет по-другому</em>`:lk?`${esc(lk.name)} <em>· ${esc(lk.family)}</em>`:`Как в стиле монтажа <em>· ещё ${n} ${plural(n,"стиль","стиля","стилей")} в библиотеке</em>`;
   const lock=!!S.look;["font","anim"].forEach(k=>{const f=$(`.field[data-k="${k}"]`);if(f){f.classList.toggle("locked",lock);f.title=lock?"Задаётся стилем субтитров. Чтобы выбрать вручную — «Как в стиле монтажа» в библиотеке.":""}});}
+function mineNames(){return(S.init.mine_looks||[]).map(k=>(lookOf(k)||{}).name).filter(Boolean).join(", ")}
 function setLook(k){S.look=k;lookUI();api("look",{sub_look:k});schedulePreview(100);
-  toast(k==="none"?"Субтитры выключены":k?"Субтитры: "+lookOf(k).name:"Субтитры как в стиле монтажа");}
+  toast(k==="none"?"Субтитры выключены":k==="mine"?"Субтитры: свой стиль у каждого ПК":k?"Субтитры: "+lookOf(k).name:"Субтитры как в стиле монтажа");}
 function openLooks(){loadLookFonts();const looks=S.init.looks||[];let cat="all",q="",lang=libLS("lib_lang")||"ru",native=libLS("lib_native")==="1",pick=S.look||"";
   const cnt=c=>c==="all"?looks.length:looks.filter(l=>l.cats.includes(c)).length,n=looks.length;
   const w=modal(`<div class="lib-top"><h3>Субтитры<small>${n} ${plural(n,"стиль","стиля","стилей")} · пример вживую, клик — выбрать</small></h3>
       <label class="lib-search"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg><input class="inp" id="lb_q" placeholder="Название или шрифт" autocomplete="off"></label>
       <button class="lib-x" id="lb_x" aria-label="Закрыть">×</button></div>
     <div class="lib-body"><aside class="lib-side">
-      <button class="lib-mode" data-k="" style="margin-top:0"><i>⟲</i><div>Как в стиле монтажа<small>шрифт и анимация из меню</small></div></button>
+      <button class="lib-mode" data-k="mine" style="margin-top:0" title="Стиль выбирается сам по этому ПК и клипу: ${esc(mineNames())}"><i>✦</i><div>Свой у каждого<small>у друзей тот же клип — другие субтитры</small></div></button>
+      <button class="lib-mode" data-k=""><i>⟲</i><div>Как в стиле монтажа<small>шрифт и анимация из меню</small></div></button>
       <button class="lib-mode" data-k="none"><i>∅</i><div>Без субтитров<small>только видео и звук</small></div></button>
       <p class="cap" style="margin-top:14px">Подборки</p>
       ${LIB_CATS.filter(c=>cnt(c[0])).map(c=>`<button class="lib-nav${c[0]===cat?" on":""}" data-c="${c[0]}">${c[1]}<span>${cnt(c[0])}</span></button>`).join("")}</aside>
@@ -760,7 +762,7 @@ function openLooks(){loadLookFonts();const looks=S.init.looks||[];let cat="all",
     <div class="lib-foot"><div class="what" id="lb_what"></div><button class="btn sm" id="lb_no">Отмена</button><button class="btn sm primary" style="--h:38px;padding:0 22px;font-size:13px" id="lb_ok">Применить</button></div>`,"lib");
   w.querySelector(".dlg>.close").hidden=true;w.querySelector("#lb_x").onclick=w.close;w.querySelector("#lb_no").onclick=w.close;
   const L=()=>LIB_LANGS.find(x=>x[0]===lang)||LIB_LANGS[0];
-  const what=()=>{const lk=lookOf(pick);w.querySelector("#lb_what").innerHTML=pick==="none"?"<b>Без субтитров</b> — в ролике только видео и звук":lk?`<b>${esc(lk.name)}</b> · ${esc(lk.family)}`+(langOk(lk,L())?"":` · для ${L()[1]} шрифт заменится на ${esc(lk.fb_family)}`):"<b>Как в стиле монтажа</b> — шрифт и анимация из меню";
+  const what=()=>{const lk=lookOf(pick);w.querySelector("#lb_what").innerHTML=pick==="none"?"<b>Без субтитров</b> — в ролике только видео и звук":pick==="mine"?`<b>Свой у каждого</b> — для каждого клипа сам выбирает из ${esc(mineNames())}; у друзей выбор другой`:lk?`<b>${esc(lk.name)}</b> · ${esc(lk.family)}`+(langOk(lk,L())?"":` · для ${L()[1]} шрифт заменится на ${esc(lk.fb_family)}`):"<b>Как в стиле монтажа</b> — шрифт и анимация из меню";
     w.querySelectorAll(".lib-card").forEach(c=>c.classList.toggle("on",c.dataset.k===pick));w.querySelectorAll(".lib-mode").forEach(c=>c.classList.toggle("on",c.dataset.k===pick));
     w.querySelector("#lb_ok").disabled=pick===(S.look||"");};
   const draw=()=>{const LL=L(),qq=q.trim().toLowerCase();
