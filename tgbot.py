@@ -446,6 +446,11 @@ class Bot:
                         {"command": "report", "description": "отчёт цифрами"},
                         {"command": "week", "description": "разбор недели"},
                         {"command": "help", "description": "все команды"}])
+                    me = (self._api(token, "getMe") or {}).get("result") or {}
+                    if me and not me.get("can_read_all_group_messages"):
+                        self.log(f"телеграм-бот @{me.get('username', '')}: в группе пиши команды с его ником, например "
+                                 f"/here@{me.get('username', '')} СНГ — иначе Telegram может их ему не передать (режим приватности). "
+                                 "Или выключи приватность: @BotFather → /setprivacy → Disable, потом удали бота из группы и добавь снова.")
                 except Exception:
                     pass
             try:
@@ -459,6 +464,16 @@ class Bot:
                 self.stop.wait(15)
                 continue
             if not r.get("ok"):
+                desc = str(r.get("description") or r)[:200]
+                if "webhook" in desc.lower():         # на бота повешен вебхук: сообщения уходят туда, а не в программу
+                    self._api(token, "deleteWebhook")
+                    self.log("телеграм-бот: на боте стоял вебхук, снял его — теперь команды из Telegram дойдут до программы")
+                elif desc != getattr(self, "_last_err", ""):
+                    self._last_err = desc
+                    self.log("телеграм-бот не получает сообщения: " + (
+                        "этот же бот (токен) запущен в другой программе или на другом компьютере — команды уходят туда. "
+                        "Оставь бота только в клиппере или создай для клиппера отдельного бота." if "409" in desc or "conflict" in desc.lower()
+                        else desc))
                 self.stop.wait(30)
                 continue
             for u in r.get("result", []):

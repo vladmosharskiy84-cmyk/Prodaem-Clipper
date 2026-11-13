@@ -339,6 +339,7 @@ def init_data():
             "styles": [["random", "Случайный"]] + [[k, v] for k, v in m.STYLES.items() if k in s_on], "geo": list(m.GEO_STYLES),
             "fonts": m.available_fonts(), "font_lib": {k: list(v) for k, v in m.FONT_LIB.items()}, "style": A.st.get("style_key") or _style_key(A.st.get("style")),
             "anims": [[k, v] for k, v in m.SUB_ANIMS.items()], "anim": A.st.get("sub_anim") or "karaoke",
+            "looks": m.looks_public(), "sub_look": A.st.get("sub_look") or "",
             "zoom": A.st.get("zoom", True), "teaser": A.st.get("teaser", True),
             "font": A.st.get("font") if A.st.get("font") in m.available_fonts() else "",
             "banners": banners_short(), "banner_use": A.cfg.get("banner_use"),
@@ -449,7 +450,8 @@ def _preview_work(d):
             t = max(0.0, min(float(d.get("t") or 0), dur - 0.8))     # на самом конце клипа кадра нет
             res = rv.make_preview(p["file"], d["fmt"], d.get("rects") or [], d.get("cap") or False, d.get("sub_y"),
                                   t, png, A.cfg, style=d.get("style"), font=d.get("font") or None,
-                                  content=d.get("content"), sub_anim=d.get("anim"), zoom=d.get("zoom", True))
+                                  content=d.get("content"), sub_anim=d.get("anim"), zoom=d.get("zoom", True),
+                                  sub_look=d.get("look"))
             if not res or not Path(res["png"]).exists():
                 err = "пример не получился: перемотай клип на другой момент и нажми «Обновить пример»"
         except ValueError as e:
@@ -492,7 +494,7 @@ def preview_video_req(d):
                 res = rv.make_preview(p["file"], d["fmt"], d.get("rects") or [], d.get("cap") or False, d.get("sub_y"),
                                       t, out, A.cfg, style=d.get("style"), font=d.get("font") or None,
                                       content=d.get("content"), video=min(8.0, max(1.0, dur - t)),
-                                      sub_anim=d.get("anim"), zoom=d.get("zoom", True))
+                                      sub_anim=d.get("anim"), zoom=d.get("zoom", True), sub_look=d.get("look"))
                 if not res or not Path(res.get("video", "")).exists():
                     err = "пример в движении не собрался: попробуй с другого места клипа"
             except Exception as e:
@@ -519,6 +521,7 @@ def montage_req(d):
            "style": d.get("style") or "classic", "font": d.get("font") or None,
            "banner": d.get("banner") if d.get("banner") in m.banner_list(A.cfg) else None,
            "content": d.get("content"), "sub_anim": d.get("anim"), "zoom": d.get("zoom", True),
+           "sub_look": d.get("look") or "",
            "teaser": d.get("teaser", True)}
     jid = secrets.token_hex(4)
     style_name = dict(m.STYLES).get(job["style"], "Случайный")
@@ -1747,6 +1750,18 @@ def today_board(srv):
             "accounts": list(accs.values())}
 
 
+def run_analysis(say, deep=False, ai=True, handles=None, goal=100000):
+    """Разбор. Подключён сервер — цифры с него (браузер не открывается). Нет сервера — старый сбор с этого ПК."""
+    import accounts
+    if hq_base()[0]:
+        srv = hq_views(fresh=True)
+        if srv.get("offline") and not srv.get("videos"):
+            raise accounts.Stop(f"сервер не отвечает: {srv['offline']}")
+        return accounts.analyze_server(srv, A.cfg, say, deep=deep, ai=ai)
+    st = accounts.load_settings()
+    return accounts.analyze(handles or st.get("accounts") or [], goal or st.get("goal", 100000), A.cfg, say, deep=deep, ai=ai)
+
+
 def tt_req(d):
     """Анализ TikTok-аккаунтов: ники, цель, сбор в фоне и последний отчёт."""
     try:
@@ -1792,6 +1807,7 @@ def tt_req(d):
         except Exception:
             pass
         return {"settings": accounts.load_settings(), "report": accounts.last_report(), "plan": plan, "roles": roles,
+                "linked": bool(hq_base()[0]),
                 "busy": TT["busy"], "stage": TT["stage"], "error": TT["error"]}
     if act == "report_now":                      # прислать отчёт за день прямо сейчас (не чаще раза в сутки)
         return manual_report("report")
@@ -1836,8 +1852,8 @@ def tt_req(d):
 
         def work():
             try:
-                accounts.analyze(handles, goal, A.cfg, say, deep=bool(d.get("deep", True)))
-                A.toast("Анализ аккаунтов готов")
+                run_analysis(say, deep=bool(d.get("deep", True)), handles=handles, goal=goal)
+                A.toast("Разбор готов")
             except accounts.Stop as e:
                 TT["error"] = str(e)
                 A.log("аналитика: " + str(e))
@@ -1986,11 +2002,12 @@ def daily_report(weekly=False, fetch=True):
     это открывает браузер. Сам по себе (22:00, понедельник) отчёт берёт цифры последней аналитики и TikTok не трогает."""
     import accounts
     st = accounts.load_settings()
-    if not st.get("accounts"):
+    linked = bool(hq_base()[0])
+    if not st.get("accounts") and not linked:
         return {"error": "в аналитике не вписаны аккаунты"}
     if TT["busy"]:
         return {"error": "аналитика уже собирается"}
-    if not fetch:
+    if not fetch and not linked:
         rep = accounts.last_report()
         if not rep:
             m.tg_message("📊 Отчёт: свежих цифр нет. Открой «Аналитика TikTok» и нажми «Собрать анализ», "
@@ -2004,8 +2021,7 @@ def daily_report(weekly=False, fetch=True):
         return {"ok": True, "sent": ok}
     TT.update(busy=True, stage="отчёт: собираю цифры", error="")
     try:
-        rep = accounts.analyze(st["accounts"], st.get("goal", 100000), A.cfg,
-                               lambda t: TT.update(stage=str(t)[:160]), deep=False, ai=weekly)
+        rep = run_analysis(lambda t: TT.update(stage=str(t)[:160]), deep=False, ai=weekly)
         text = accounts.weekly_text(rep) if weekly else accounts.report_text(rep)
         ok = m.tg_message(text, "report")
         A.log(("разбор недели " if weekly else "отчёт за день ") + ("отправлен в Telegram" if ok else "собран, но в Telegram не ушёл"))
@@ -2025,16 +2041,20 @@ def daily_loop():
     while not A.quit.wait(60):
         try:
             st = accounts.load_settings()
-            if not st.get("report", True) or not st.get("accounts"):
+            linked = bool(hq_base()[0])
+            if not st.get("report", True) or not (st.get("accounts") or linked):
                 continue
             hour = int(st.get("report_hour", 22))
             today = time.strftime("%Y-%m-%d")
             sent = mark.read_text().strip() if mark.exists() else ""
+            weekly = time.localtime().tm_wday == int(st.get("weekly_day", 0)) and st.get("weekly", True)
+            if linked and not weekly:
+                continue                         # сводку просмотров каждый вечер шлёт сервер (22:05), здесь только разбор недели
             if time.localtime().tm_hour >= hour and sent != today and not (A.busy or VOD["busy"]):
                 mark.parent.mkdir(parents=True, exist_ok=True)
                 mark.write_text(today)
-                daily_report(weekly=time.localtime().tm_wday == int(st.get("weekly_day", 0)) and st.get("weekly", True),
-                             fetch=False)       # сам по себе TikTok не открываем: только цифры последней аналитики
+                # с сервером — свежий разбор по его цифрам (без браузера); без сервера — цифры последней аналитики
+                daily_report(weekly=weekly, fetch=linked)
         except Exception as e:
             A.log(f"отчёт не получился: {e}")
 
@@ -2046,7 +2066,7 @@ def manual_report(kind):
     """Отчёт или разбор недели по кнопке или команде: не чаще раза в 24 часа (каждый вид отдельно).
     Отчёт в 22:00 и разбор по понедельникам приходят сами, это ограничение их не трогает."""
     import accounts
-    if not accounts.load_settings().get("accounts"):
+    if not accounts.load_settings().get("accounts") and not hq_base()[0]:
         return {"error": "no_accounts"}
     if TT["busy"]:
         return {"error": "аналитика уже собирается"}
@@ -2293,6 +2313,8 @@ def look(d):
             A.st["font"] = d["font"] or "Как в настройках"
         if "anim" in d:
             A.st["sub_anim"] = d["anim"]
+        if "sub_look" in d:
+            A.st["sub_look"] = d["sub_look"] or ""
         if "zoom" in d:
             A.st["zoom"] = bool(d["zoom"])
         if "teaser" in d:

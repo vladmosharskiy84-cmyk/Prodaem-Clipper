@@ -218,6 +218,48 @@ input[type=range]{flex:1;accent-color:var(--a1);min-width:140px}
 .newsold{margin-top:16px}.newsold summary{cursor:pointer;color:var(--mut);font-size:13px}
 @keyframes pop{from{transform:translateY(16px) scale(.97);opacity:0}}
 .dlg h3{font:700 18px var(--display);margin:0 0 4px;letter-spacing:.02em}
+.lookbtn em{font-style:normal;color:var(--mut);font-weight:500}
+.field.locked{opacity:.45;pointer-events:none}
+.dlg.lib{width:min(1100px,100%);padding:0;overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 40px)}
+.lib-top{display:flex;align-items:center;gap:14px;padding:18px 22px 14px;border-bottom:1px solid var(--line)}
+.lib-top h3{margin:0;white-space:nowrap}.lib-top h3 small{display:block;font:600 11.5px var(--body);color:var(--mut);letter-spacing:.02em;margin-top:3px}
+.lib-search{position:relative;flex:1;max-width:360px;margin-left:auto}.lib-search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--dim)}
+.lib-search .inp{padding-left:36px;height:38px}
+.lib-x{width:38px;height:38px;flex:none;border-radius:11px;border:1px solid var(--line);background:var(--panel2);color:var(--mut);font-size:18px;cursor:pointer;transition:color .2s,border-color .2s}.lib-x:hover{color:var(--txt);border-color:var(--a2)}
+.lib-body{display:grid;grid-template-columns:200px minmax(0,1fr);min-height:0;flex:1}
+.lib-side{border-right:1px solid var(--line);padding:14px 12px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.lib-side .cap{font:700 10.5px var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:6px 8px 6px}
+.lib-nav{display:flex;justify-content:space-between;align-items:center;gap:8px;border:0;background:none;color:var(--mut);font:600 13px var(--body);padding:8px 10px;border-radius:9px;cursor:pointer;text-align:left;transition:background .2s,color .2s}
+.lib-nav:hover{background:var(--panel2);color:var(--txt)}.lib-nav.on{background:color-mix(in srgb,var(--a1) 18%,transparent);color:var(--txt)}
+.lib-nav span{font:600 11px var(--mono);color:var(--dim)}.lib-nav.on span{color:var(--a2)}
+.lib-mode{display:flex;gap:10px;align-items:center;border:1px dashed var(--line);background:none;color:var(--txt);border-radius:11px;padding:9px 10px;cursor:pointer;text-align:left;font:600 12.5px var(--body);margin-top:6px;transition:border-color .2s,background .2s}
+.lib-mode small{display:block;color:var(--mut);font-weight:500;font-size:11px}.lib-mode i{font-style:normal;width:26px;height:26px;flex:none;border-radius:8px;display:grid;place-items:center;background:var(--panel2);font-size:13px}
+.lib-mode.on{border-style:solid;border-color:var(--a2);background:color-mix(in srgb,var(--a2) 10%,transparent)}
+.lib-main{overflow-y:auto;padding:14px 18px 18px;min-height:0}
+.lib-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;color:var(--mut);font-size:12.5px}
+.lib-langs{display:flex;gap:4px;flex-wrap:wrap}.lib-langs button{border:1px solid var(--line);background:none;color:var(--mut);font:700 11px var(--mono);padding:5px 8px;border-radius:7px;cursor:pointer}
+.lib-langs button.on{color:#fff;border-color:transparent;background:linear-gradient(110deg,var(--a1),var(--a2))}
+.lib-bar .toggle{margin-left:auto;font-size:12px}
+.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:14px}
+.lib-card{border:0;background:none;color:var(--txt);padding:0;text-align:left;cursor:pointer;font:inherit;min-width:0;display:flex;flex-direction:column;gap:7px}
+.lib-ph{position:relative;aspect-ratio:9/14;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:#0b0c12;transition:transform .3s var(--ease),border-color .25s,box-shadow .25s}
+.lib-ph::before{content:"";position:absolute;left:7%;right:7%;top:7%;height:30%;border-radius:10px;background:radial-gradient(circle at 50% 60%,#3a3550 0,#1d1b2a 70%)}
+.lib-ph::after{content:"";position:absolute;left:7%;right:7%;top:40%;bottom:7%;border-radius:10px;background:linear-gradient(160deg,color-mix(in srgb,var(--a1) 40%,#14161f),#14161f 55%,color-mix(in srgb,var(--a2) 30%,#14161f))}
+.lib-card:hover .lib-ph{transform:translateY(-3px);border-color:color-mix(in srgb,var(--a2) 50%,var(--line))}
+.lib-card.on .lib-ph{border-color:transparent;box-shadow:0 0 0 2px var(--a1),0 14px 30px -14px var(--a1)}
+.lib-card.cur .lib-ph .now{display:block}
+.lib-ph .now{display:none;position:absolute;left:8px;top:8px;z-index:2;font:700 9.5px var(--body);letter-spacing:.06em;text-transform:uppercase;color:#fff;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);padding:3px 7px;border-radius:6px}
+.lib-ph .fl{position:absolute;right:8px;top:8px;z-index:2;font:700 10px var(--mono);padding:3px 6px;border-radius:6px;background:rgba(0,0,0,.55);backdrop-filter:blur(4px)}
+.lib-ph .fl.ok{color:#5fe39a}.lib-ph .fl.warn{color:#ffb35c}
+.lk-txt{position:absolute;left:6%;right:6%;top:64%;z-index:1;text-align:center;line-height:1.2;font-size:20px;white-space:nowrap;overflow:hidden;padding:4px 0}
+.lk-txt span{display:inline-block;color:var(--c);background:var(--b,transparent);transition:transform .15s,color .15s,background .15s}
+.lk-txt.bx span{padding:.03em .2em;border-radius:.16em}
+.lk-txt span.hl{color:var(--hc);background:var(--hb,var(--b,transparent));transform:scale(1.08)}
+.lk-txt.one span{display:none}.lk-txt.one span.hl{display:inline-block}
+.lib-card b{font-weight:700;font-size:13px;padding:0 2px}.lib-card small{color:var(--mut);font-size:11px;padding:0 2px;margin-top:-5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lib-foot{display:flex;align-items:center;gap:12px;padding:12px 22px;border-top:1px solid var(--line);background:color-mix(in srgb,var(--panel) 85%,#000)}
+.lib-foot .what{flex:1;min-width:0;color:var(--mut);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lib-foot .what b{color:var(--txt)}
+@media(max-width:720px){.lib-body{grid-template-columns:1fr}.lib-side{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}.lib-side .cap{display:none}.lib-top{flex-wrap:wrap}}
 .dlg .sub{color:var(--mut);margin:0 0 16px;font-size:13px;line-height:1.5}
 .dlg .close{float:right;border:0;background:var(--panel2);color:var(--mut);width:34px;height:34px;border-radius:10px;cursor:pointer;font-size:18px;transition:color .2s,transform .3s var(--ease)}
 .dlg .close:hover{color:var(--txt);transform:rotate(90deg)}
@@ -253,6 +295,7 @@ body.leaving .app{opacity:0;transform:scale(.985);transition:opacity .35s,transf
 /* аналитика TikTok */
 .dlg.tt{width:min(1120px,100%)}
 .ttform{display:grid;grid-template-columns:minmax(0,1fr) 150px auto;gap:10px;align-items:end;margin:14px 0 6px}
+.ttsrv{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 6px;color:var(--mut);font-size:13px}
 .ttform textarea{height:42px;min-height:42px;resize:vertical;padding:11px 13px;line-height:1.3;font:600 13px var(--body)}
 .ttstat{display:flex;align-items:center;gap:10px;min-height:22px;margin:8px 0 4px;color:var(--mut);font-size:13px}
 .ttcards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
@@ -444,6 +487,7 @@ body.leaving .app{opacity:0;transform:scale(.985);transition:opacity .35s,transf
         <div><p class="label">Шрифт субтитров</p><div class="field" data-k="font"><button class="sel"></button><div class="menu"></div></div></div>
         <div><p class="label">Баннер оффера</p><div class="field" data-k="banner"><button class="sel"></button><div class="menu"></div></div></div>
       </div>
+      <div><p class="label">Стиль субтитров</p><button class="sel lookbtn" id="lookbtn" type="button"></button></div>
       <div class="row">
         <div><p class="label">Анимация субтитров</p><div class="field" data-k="anim"><button class="sel"></button><div class="menu"></div></div></div>
         <div><p class="label">Зумы</p><label class="toggle" style="height:42px"><input type="checkbox" id="zoom" checked><i></i>приближать камеру на криках и реакциях</label></div>
@@ -511,7 +555,7 @@ const S={init:null,items:[],cur:null,clip:null,fmt:"talk",rects:[],content:null,
   if(d.profiles.length<2)P.hidden=true;requestAnimationFrame(movePill);document.fonts?.ready.then(movePill);
   $("#chips").innerHTML=d.formats.map(f=>`<button class="chip" data-f="${f.key}" title="${esc(f.full)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${ICONS[f.key]}</svg><span>${esc(f.label)}</span></button>`).join("");
   $$("#chips .chip").forEach(c=>c.onclick=()=>setFmt(c.dataset.f,true));
-  S.style=d.style||"classic";S.font=d.font||"";S.banner=d.banner_use;S.anim=d.anim||"karaoke";$("#zoom").checked=d.zoom!==false;$("#teaser").checked=d.teaser!==false;S.videoBroken=!!d.video_broken;
+  S.style=d.style||"classic";S.font=d.font||"";S.banner=d.banner_use;S.anim=d.anim||"karaoke";S.look=d.sub_look||"";$("#zoom").checked=d.zoom!==false;$("#teaser").checked=d.teaser!==false;S.videoBroken=!!d.video_broken;
   if(d.mode==="blogger"){await blogMode();poll();if(d.blog_keys)setTimeout(openSettings,500);return}
   if(d.mode==="reaction"){await reactMode();poll();return}
   loadFontPreviews();buildMenus();await loadQueue(true);poll();
@@ -660,11 +704,88 @@ function buildMenus(){$$(".field").forEach(f=>{const k=f.dataset.k,m=f.querySele
     +(k==="banner"?'<button data-v="__edit" style="color:var(--a2)">Баннеры офферов…</button>':"");
   f.querySelector(".sel").onclick=e=>{e.stopPropagation();const was=f.classList.contains("open");$$(".field").forEach(x=>x.classList.remove("open"));if(!was)f.classList.add("open");};
   m.onclick=e=>{const b=e.target.closest("button");if(!b)return;f.classList.remove("open");if(b.dataset.v==="__edit")return openBanners();if(b.dataset.v==="__rename")return renameBanner();pick(k,b.dataset.v,true);};
-  pick(k,k==="style"?S.style:k==="font"?S.font:k==="anim"?S.anim:(S.banner||optList("banner")[0][0]),false);});}
+  pick(k,k==="style"?S.style:k==="font"?S.font:k==="anim"?S.anim:(S.banner||optList("banner")[0][0]),false);});lookUI();}
 function pick(k,v,user){S[k]=v;const f=$(`.field[data-k="${k}"]`),o=optList(k).find(x=>x[0]===v)||optList(k)[0];f.querySelector(".sel").textContent=o[1];
   f.querySelectorAll(".menu button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));
   if(!user)return;if(k==="banner"){api("banners",{act:"use",name:v});toast("Баннер: "+v);}else{api("look",{[k]:v});schedulePreview(100);}}
 document.addEventListener("click",()=>$$(".field").forEach(x=>x.classList.remove("open")));
+
+/* ---------- библиотека стилей субтитров: превью на CSS, без рендера ---------- */
+const LIB_LANGS=[["ru","RU","c","ВОТ ЭТО ПОВОРОТ"],["uk","UK","c","ОЦЕ ТАК ПОВОРОТ"],["kk","KK","cx","МІНЕ ҚЫЗЫҚ БОЛДЫ"],["en","EN","l","NO WAY BRO"],
+  ["es","ES","l","NO PUEDE SER"],["pt","PT","l","NÃO ACREDITO NISSO"],["de","DE","l","DAS GIBT ES NICHT"],["fr","FR","l","C'EST PAS VRAI"],
+  ["pl","PL","lx","TO JEST SZOK"],["tr","TR","lx","BU ÇILGINLIK"],["vi","VI","vi","KHÔNG THỂ TIN NỔI"]];
+const LIB_CATS=[["all","Все"],["pop","Популярные"],["hype","Хайп"],["word","По слову"],["box","На плашке"],["neon","Неон"],
+  ["comic","Мемы"],["game","Игровые"],["min","Спокойные"]];
+const libLS=(k,v)=>{try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}};
+function plural(n,a,b,c){const t=n%10,h=n%100;return t===1&&h!==11?a:t>=2&&t<=4&&(h<12||h>14)?b:c}
+function lookOf(k){return(S.init.looks||[]).find(x=>x.key===k)}
+function langOk(lk,lang){return lk.subsets.split(" ").includes(lang[2])}
+function lookLangs(lk){return LIB_LANGS.filter(x=>langOk(lk,x)).length}
+let libFontsDone=false;
+function loadLookFonts(){if(libFontsDone)return;libFontsDone=true;const fam={};
+  (S.init.looks||[]).forEach(l=>[[l.family,l.weight],[l.fb_family,l.fb_weight]].forEach(([f,w])=>{if(f==="Impact")return;(fam[f]=fam[f]||new Set()).add(w)}));
+  Object.entries(fam).forEach(([f,ws])=>{const l=document.createElement("link");l.rel="stylesheet";   /* по ссылке на шрифт: если один не загрузится, остальные работают */
+    l.href="https://fonts.googleapis.com/css2?family="+f.replace(/ /g,"+")+":wght@"+[...ws].sort((a,b)=>a-b).join(";")+"&display=swap";l.onload=()=>document.fonts?.ready.then(()=>{const g=$("#lb_grid");if(g)fitLookText(g)});document.head.appendChild(l);});}
+/* субтитр на мини-телефоне: живой, как в ролике — во фразе бежит подсветка, «по слову» — слова сменяют друг друга */
+function lookSample(lk,lang){const ok=langOk(lk,lang),fam=ok?lk.family:lk.fb_family,wt=ok?lk.weight:lk.fb_weight;
+  let words=lang[3].split(" ");if(!lk.up)words=words.map((w,i)=>i?w.toLowerCase():w[0]+w.slice(1).toLowerCase());
+  const one=lk.anim!=="karaoke";words=words.slice(0,3);
+  const stroke=lk.bord&&!lk.box?`-webkit-text-stroke:${(lk.bord*.3).toFixed(1)}px #000;paint-order:stroke fill;`:"";
+  const glow=lk.glow?`text-shadow:0 0 4px ${lk.glow},0 0 12px ${lk.glow},0 0 22px ${lk.glow};`:lk.anim==="soft"?"text-shadow:0 4px 12px rgba(0,0,0,.8);":"";
+  const v=`--c:${lk.fg};--hc:${lk.hl||lk.fg};${lk.box?`--b:${lk.box};`:""}${lk.hlbox?`--hb:${lk.hlbox};`:""}`;
+  return`<div class="lk-txt${one?" one":""}${lk.box||lk.hlbox?" bx":""}" style="font-family:'${fam}',Impact,sans-serif;font-weight:${wt};${v}${stroke}${glow}">${words.map((w,i)=>`<span${i===0?' class="hl"':""}>${esc(w)}</span>`).join(" ")}</div>`;}
+function fitLookText(root){root.querySelectorAll(".lk-txt").forEach(t=>{const sp=[...t.children];let fs=20;t.style.fontSize=fs+"px";
+  const one=t.classList.contains("one"),cur=sp.findIndex(s=>s.classList.contains("hl"));
+  if(one){const L=sp.reduce((a,s)=>s.textContent.length>a.textContent.length?s:a,sp[0]);sp.forEach(s=>s.classList.toggle("hl",s===L))}
+  while(fs>9&&t.scrollWidth>t.clientWidth+1){fs--;t.style.fontSize=fs+"px";}
+  if(one)sp.forEach((s,i)=>s.classList.toggle("hl",i===cur));})}
+function lookUI(){const b=$("#lookbtn");if(!b||!S.init)return;const lk=lookOf(S.look),n=(S.init.looks||[]).length;
+  b.innerHTML=S.look==="none"?"Выключены <em>· в ролике только видео и звук</em>":lk?`${esc(lk.name)} <em>· ${esc(lk.family)}</em>`:`Как в стиле монтажа <em>· ещё ${n} ${plural(n,"стиль","стиля","стилей")} в библиотеке</em>`;
+  const lock=!!S.look;["font","anim"].forEach(k=>{const f=$(`.field[data-k="${k}"]`);if(f){f.classList.toggle("locked",lock);f.title=lock?"Задаётся стилем субтитров. Чтобы выбрать вручную — «Как в стиле монтажа» в библиотеке.":""}});}
+function setLook(k){S.look=k;lookUI();api("look",{sub_look:k});schedulePreview(100);
+  toast(k==="none"?"Субтитры выключены":k?"Субтитры: "+lookOf(k).name:"Субтитры как в стиле монтажа");}
+function openLooks(){loadLookFonts();const looks=S.init.looks||[];let cat="all",q="",lang=libLS("lib_lang")||"ru",native=libLS("lib_native")==="1",pick=S.look||"";
+  const cnt=c=>c==="all"?looks.length:looks.filter(l=>l.cats.includes(c)).length,n=looks.length;
+  const w=modal(`<div class="lib-top"><h3>Субтитры<small>${n} ${plural(n,"стиль","стиля","стилей")} · пример вживую, клик — выбрать</small></h3>
+      <label class="lib-search"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg><input class="inp" id="lb_q" placeholder="Название или шрифт" autocomplete="off"></label>
+      <button class="lib-x" id="lb_x" aria-label="Закрыть">×</button></div>
+    <div class="lib-body"><aside class="lib-side">
+      <button class="lib-mode" data-k="" style="margin-top:0"><i>⟲</i><div>Как в стиле монтажа<small>шрифт и анимация из меню</small></div></button>
+      <button class="lib-mode" data-k="none"><i>∅</i><div>Без субтитров<small>только видео и звук</small></div></button>
+      <p class="cap" style="margin-top:14px">Подборки</p>
+      ${LIB_CATS.filter(c=>cnt(c[0])).map(c=>`<button class="lib-nav${c[0]===cat?" on":""}" data-c="${c[0]}">${c[1]}<span>${cnt(c[0])}</span></button>`).join("")}</aside>
+    <div class="lib-main"><div class="lib-bar">Пример на<div class="lib-langs">${LIB_LANGS.map(l=>`<button data-l="${l[0]}"${l[0]===lang?' class="on"':""}>${l[1]}</button>`).join("")}</div>
+      <label class="toggle"><input type="checkbox" id="lb_nat"${native?" checked":""}><i></i>без замены шрифта</label></div>
+      <div class="lib-grid" id="lb_grid"></div></div></div>
+    <div class="lib-foot"><div class="what" id="lb_what"></div><button class="btn sm" id="lb_no">Отмена</button><button class="btn sm primary" style="--h:38px;padding:0 22px;font-size:13px" id="lb_ok">Применить</button></div>`,"lib");
+  w.querySelector(".dlg>.close").hidden=true;w.querySelector("#lb_x").onclick=w.close;w.querySelector("#lb_no").onclick=w.close;
+  const L=()=>LIB_LANGS.find(x=>x[0]===lang)||LIB_LANGS[0];
+  const what=()=>{const lk=lookOf(pick);w.querySelector("#lb_what").innerHTML=pick==="none"?"<b>Без субтитров</b> — в ролике только видео и звук":lk?`<b>${esc(lk.name)}</b> · ${esc(lk.family)}`+(langOk(lk,L())?"":` · для ${L()[1]} шрифт заменится на ${esc(lk.fb_family)}`):"<b>Как в стиле монтажа</b> — шрифт и анимация из меню";
+    w.querySelectorAll(".lib-card").forEach(c=>c.classList.toggle("on",c.dataset.k===pick));w.querySelectorAll(".lib-mode").forEach(c=>c.classList.toggle("on",c.dataset.k===pick));
+    w.querySelector("#lb_ok").disabled=pick===(S.look||"");};
+  const draw=()=>{const LL=L(),qq=q.trim().toLowerCase();
+    const list=looks.filter(lk=>(cat==="all"||lk.cats.includes(cat))&&(!qq||(lk.name+" "+lk.family).toLowerCase().includes(qq))&&(!native||langOk(lk,LL)));
+    const g=w.querySelector("#lb_grid");
+    g.innerHTML=list.map(lk=>{const ok=langOk(lk,LL);return`<button class="lib-card${S.look===lk.key?" cur":""}" data-k="${lk.key}">
+      <div class="lib-ph"><span class="now">сейчас</span><span class="fl ${ok?"ok":"warn"}" title="${ok?"Шрифт пишет на этом языке":"В шрифте нет нужных букв — в ролике будет "+esc(lk.fb_family)}">${LL[1]} ${ok?"✓":"↺"}</span>${lookSample(lk,LL)}</div>
+      <b>${esc(lk.name)}</b><small>${esc(lk.family)} · ${lookLangs(lk)} ${plural(lookLangs(lk),"язык","языка","языков")}</small></button>`}).join("")||'<p class="empty">Ничего не нашлось — попробуй другое слово</p>';
+    what();fitLookText(g);document.fonts?.ready.then(()=>fitLookText(g));};
+  const apply=()=>{if(pick!==(S.look||""))setLook(pick);w.close()};
+  w.querySelector("#lb_ok").onclick=apply;
+  w.querySelector("#lb_q").oninput=e=>{q=e.target.value;draw()};
+  w.querySelector(".lib-langs").onclick=e=>{const b=e.target.closest("button");if(!b)return;lang=b.dataset.l;libLS("lib_lang",lang);w.querySelectorAll(".lib-langs button").forEach(x=>x.classList.toggle("on",x===b));draw()};
+  w.querySelector("#lb_nat").onchange=e=>{native=e.target.checked;libLS("lib_native",native?"1":"0");draw()};
+  w.querySelector(".lib-side").onclick=e=>{const b=e.target.closest(".lib-nav");if(b){cat=b.dataset.c;w.querySelectorAll(".lib-nav").forEach(x=>x.classList.toggle("on",x===b));draw();return}
+    const m=e.target.closest(".lib-mode");if(m){pick=m.dataset.k;what()}};
+  w.querySelector(".lib-side").ondblclick=e=>{if(e.target.closest(".lib-mode"))apply()};
+  const grid=w.querySelector("#lb_grid");
+  grid.onclick=e=>{const c=e.target.closest(".lib-card");if(!c)return;pick=c.dataset.k;what()};
+  grid.ondblclick=e=>{if(e.target.closest(".lib-card"))apply()};
+  draw();setTimeout(()=>w.querySelector("#lb_q").focus(),50);
+  let tick=0;const iv=setInterval(()=>{if(!document.body.contains(w))return clearInterval(iv);tick++;   /* подсветка бежит по словам */
+    grid.querySelectorAll(".lk-txt").forEach(t=>{const sp=t.children;for(let i=0;i<sp.length;i++)sp[i].classList.toggle("hl",i===tick%sp.length)})},650);
+  let t;const ro=new ResizeObserver(()=>{clearTimeout(t);t=setTimeout(()=>fitLookText(grid),120)});ro.observe(grid);}
+$("#lookbtn").onclick=e=>{e.stopPropagation();openLooks()};
 
 /* ---------- субтитры ---------- */
 function subLabel(){$("#subv").textContent=$("#subauto").checked?"авто":$("#suby").value+"%";}
@@ -679,16 +800,16 @@ function schedulePreview(ms){if(S.rx)return;   /* у «Реакций» свой
 async function previewNow(){if(!S.clip)return;if(S.fmt==="react"||S.fmt==="cs"){if(!S.rects.length){$("#pvnote").textContent="Обведи камеру стримера, чтобы увидеть пример.";$("#pvnote").className="note";return}}
   if(S.fmt==="multi"&&S.rects.length<2){$("#pvnote").textContent="Обведи хотя бы две камеры.";return}
   $("#phone").classList.add("busy");$("#pvbtn").innerHTML='<span class="spin"></span>Рисую…';
-  const r=await api("preview",{id:S.cur,fmt:S.fmt,rects:S.rects,cap:S.cap,content:S.content,sub_y:subY(),t:curT(),style:S.style,font:S.font,anim:S.anim,zoom:$("#zoom").checked});
+  const r=await api("preview",{id:S.cur,fmt:S.fmt,rects:S.rects,cap:S.cap,content:S.content,sub_y:subY(),t:curT(),style:S.style,font:S.font,anim:S.anim,look:S.look,zoom:$("#zoom").checked});
   if(r.error){donePreview();toast(r.error,false);}}
 function donePreview(){$("#phone").classList.remove("busy");$("#pvbtn").textContent="Обновить пример";}
 /* пример в движении: собирается по кнопке ▶ на телефоне */
-function pvKey(){return JSON.stringify([S.cur,S.fmt,S.rects,S.cap,S.content,subY(),S.style,S.font,S.anim,$("#zoom").checked])}
+function pvKey(){return JSON.stringify([S.cur,S.fmt,S.rects,S.cap,S.content,subY(),S.style,S.font,S.anim,S.look,$("#zoom").checked])}
 function stopPv(){const v=$("#pvv");v.pause();v.hidden=true;$("#phone").classList.remove("playing");$("#pvico").innerHTML='<path d="M4 2l10 6-10 6z"/>';$("#pvlab").textContent="";}
 $("#pvplay").onclick=async()=>{const v=$("#pvv");
   if(!v.hidden&&S.pvvKey===pvKey()){if(v.paused){v.play();$("#phone").classList.add("playing");}else{v.pause();$("#phone").classList.remove("playing");}return}
   if(!S.clip)return;vid.pause();S.pvvKey=pvKey();$("#phone").classList.add("busy");$("#pvlab").textContent="собираю пример…";
-  const r=await api("preview_video",{key:S.pvvKey,id:S.cur,fmt:S.fmt,rects:S.rects,cap:S.cap,content:S.content,sub_y:subY(),t:curT(),style:S.style,font:S.font,anim:S.anim,zoom:$("#zoom").checked});
+  const r=await api("preview_video",{key:S.pvvKey,id:S.cur,fmt:S.fmt,rects:S.rects,cap:S.cap,content:S.content,sub_y:subY(),t:curT(),style:S.style,font:S.font,anim:S.anim,look:S.look,zoom:$("#zoom").checked});
   if(r.error){$("#phone").classList.remove("busy");$("#pvlab").textContent="";toast(r.error,false);}};
 $("#pvv").onclick=()=>$("#pvplay").click();
 function onPvideo(ev){if(ev.key!==S.pvvKey)return;$("#phone").classList.remove("busy");
@@ -701,7 +822,7 @@ $("#teaser").onchange=()=>api("look",{teaser:$("#teaser").checked});
 
 /* ---------- монтаж ---------- */
 $("#go").onclick=async()=>{if(!S.clip)return;vid.pause();
-  const r=await api("montage",{id:S.cur,fmt:S.fmt,rects:S.rects,cap:S.cap,content:S.content,sub_y:subY(),style:S.style,font:S.font,banner:S.banner,anim:S.anim,zoom:$("#zoom").checked,teaser:$("#teaser").checked,
+  const r=await api("montage",{id:S.cur,fmt:S.fmt,rects:S.rects,cap:S.cap,content:S.content,sub_y:subY(),style:S.style,font:S.font,banner:S.banner,anim:S.anim,look:S.look,zoom:$("#zoom").checked,teaser:$("#teaser").checked,
     streamer:$("#streamer").value,title:$("#otitle").value});
   if(r.error){toast(r.error,false);return}toast("В монтаж: "+($("#streamer").value||"своё видео")+". Бери следующий клип");};
 $("#afbtn").onclick=async()=>{const b=$("#afbtn"),on=!b.dataset.on;const r=await api("qtools",{act:"autofind",on});if(r.error)return toast(r.error,false);
@@ -1123,7 +1244,8 @@ $("#ttbtn").onclick=async()=>{const r0=await api("tt",{act:"get"});if(r0.error)r
   const w=modal(`<h3>Аналитика TikTok</h3><div class="ttabs"><button data-p="today">Сегодня</button><button data-p="off">Офферы и аккаунты</button><button data-p="an">Разбор</button></div>
     <div id="tp_today"></div><div id="tp_off" hidden></div><div id="tp_an" hidden><p class="sub">Программа соберёт все ролики с твоих аккаунтов, сравнит прострелы и провалы, найдёт дубли между аккаунтами,
     посмотрит, как начинаются ролики, и Claude напишет, что мешает охвату и что выкладывать дальше. Запускай раз в день: так видно рост.</p>
-    <div class="ttform"><div><div class="label">Аккаунты: @ник или ссылка на любой ролик аккаунта</div><textarea class="inp" id="tt_h" placeholder="@твой_ник  или  https://www.tiktok.com/@твой_ник/video/…  (только свои аккаунты)"></textarea></div>
+    <div class="ttsrv" id="tt_srv" hidden><span id="tt_srvacc"></span><button class="btn small-primary" id="tt_go2" style="height:42px">Разобрать сейчас</button></div>
+    <div class="ttform" id="tt_old"><div><div class="label">Аккаунты: @ник или ссылка на любой ролик аккаунта</div><textarea class="inp" id="tt_h" placeholder="@твой_ник  или  https://www.tiktok.com/@твой_ник/video/…  (только свои аккаунты)"></textarea></div>
       <div><div class="label">Цель на ролик</div><input class="inp" id="tt_g" type="number" min="1000" step="1000"></div>
       <button class="btn small-primary" id="tt_go" style="height:42px">Собрать анализ</button></div>
     <label class="note" style="display:flex;gap:8px;align-items:center;text-align:left;margin:4px 0 0"><input type="checkbox" id="tt_deep" checked> разбирать начало лучших и худших роликов (скачает около 10 роликов, дольше на пару минут)</label>
@@ -1147,8 +1269,17 @@ $("#ttbtn").onclick=async()=>{const r0=await api("tt",{act:"get"});if(r0.error)r
   const today=new Date().toISOString().slice(0,10),plan=(r0.plan||[]).filter(x=>x.day>=today);
   w.querySelector("#tt_plan").innerHTML=plan.length?plan.map(x=>`<div style="padding:6px 0;border-bottom:1px solid #ffffff0a;font-size:12.5px">${x.status==="posted"?"✅ ":x.status==="dropped"?"✕ ":"⏳ "}<b>${esc(x.day.slice(5).split("-").reverse().join("."))} ${esc(x.time)}</b> · @${esc(x.account)}${x.score?` · ${x.score}/10`:""}<div class="note" style="text-align:left;margin:2px 0 0">${esc(x.caption||"")}</div></div>`).join(""):'<div class="empty">Пока пусто: продюсер расписывает ролики после монтажа</div>';
   const st=r0.settings||{};w.querySelector("#tt_h").value=(st.accounts||[]).map(a=>"@"+a).join(" ");w.querySelector("#tt_g").value=st.goal||100000;
+  if(r0.linked){            // цифры берутся с сервера: аккаунты — из «Офферов», браузер не нужен, цели на ролик нет
+    w.querySelector("#tt_old").hidden=true;w.querySelector("#tt_srv").hidden=false;
+    w.querySelector("#tp_an .sub").textContent="Что резать дальше: какие стримеры, стили, длина и время выхода набирают больше, где ролики застревают на пробе и какие клипы задублированы. Цифры берутся с сервера (браузер не открывается), аккаунты — из «Офферов и аккаунтов». Разбор приходит сам по понедельникам в группу «Отчёты»; деньги — на вкладке «Сегодня».";
+    w.querySelector("#tt_srvacc").textContent="";
+    const pn=w.querySelector("#tt_plan").parentNode.querySelector(".note");
+    if(pn)pn.textContent="Разбор недели приходит сам по понедельникам в группу «Отчёты», сводка просмотров — каждый вечер в 22:05 от сервера в темы офферов.";
+    api("tt",{act:"views",fresh:true}).then(v=>{const a=Object.entries((v.srv||{}).accounts||{}).filter(([,x])=>x.on!==false).map(([h])=>"@"+h);
+      w.querySelector("#tt_srvacc").innerHTML=a.length?`Аккаунты: <b>${esc(a.join(" "))}</b>`:'<span class="res bad">Добавь аккаунты на вкладке «Офферы и аккаунты»</span>';});
+    w.querySelector("#tt_go2").onclick=()=>w.querySelector("#tt_go").click();}
   const S1=w.querySelector("#tt_st"),R=w.querySelector("#tt_rep");let tm=null;
-  const status=(busy,stage,err)=>{S1.innerHTML=busy?`<span class="spin"></span><span>${esc(stage||"собираю…")}</span>`:err?`<span class="res bad">${esc(err)}</span>`:"";w.querySelector("#tt_go").disabled=!!busy;};
+  const status=(busy,stage,err)=>{S1.innerHTML=busy?`<span class="spin"></span><span>${esc(stage||"собираю…")}</span>`:err?`<span class="res bad">${esc(err)}</span>`:"";w.querySelector("#tt_go").disabled=!!busy;w.querySelector("#tt_go2").disabled=!!busy;};
   const poll=async()=>{if(!w.isConnected)return;const r=await api("tt",{act:"status"});status(r.busy,r.stage,r.error);
     if(r.busy){tm=setTimeout(poll,1200);return}if(r.report)render(r.report);};
   w.querySelector("#tt_go").onclick=async()=>{const r=await api("tt",{act:"run",handles:w.querySelector("#tt_h").value,goal:+w.querySelector("#tt_g").value||100000,deep:w.querySelector("#tt_deep").checked});
@@ -1169,21 +1300,23 @@ $("#ttbtn").onclick=async()=>{const r0=await api("tt",{act:"get"});if(r0.error)r
     const stuck=all.length?Math.round(all.reduce((s,a)=>s+a.stuck*a.videos,0)/Math.max(1,all.reduce((s,a)=>s+a.videos,0))):0;
     const when=new Date(rep.time*1000).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
     const verd=Object.fromEntries((ai.accounts||[]).map(a=>[String(a.acc||"").replace(/^@/,"").toLowerCase(),a]));
+    const passed=all.length?Math.round(all.reduce((s,a)=>s+(a.passed||0)*a.videos,0)/Math.max(1,all.reduce((s,a)=>s+a.videos,0))):0;
     let h=`<div class="ttcards">
-      <div class="ttc"><small>Лучший ролик → цель</small><b>${fN(b.views)}</b><span>${pct.toFixed(pct<10?1:0)}% от ${fN(goal)} · @${esc(b.acc||"")}</span><div class="ttbar"><i style="width:${pct}%"></i></div></div>
+      ${rep.goal?`<div class="ttc"><small>Лучший ролик → цель</small><b>${fN(b.views)}</b><span>${pct.toFixed(pct<10?1:0)}% от ${fN(goal)} · @${esc(b.acc||"")}</span><div class="ttbar"><i style="width:${pct}%"></i></div></div>`
+        :`<div class="ttc"><small>Лучший ролик</small><b>${fN(b.views)}</b><span>@${esc(b.acc||"")} · ${esc(b.posted||"")}</span></div>`}
       <div class="ttc"><small>Просмотров за 7 дней</small><b>${fN(rep.growth_7d)}</b><span>${rep.has_history?"по снимкам":"ролики за неделю (рост по дням будет со 2-го запуска)"}</span></div>
       <div class="ttc"><small>Застряли на пробе</small><b style="color:${stuck>60?"var(--bad)":"var(--txt)"}">${stuck}%</b><span>роликов до 700 просмотров</span></div>
       ${rep.money?`<div class="ttc"><small>В выплату за 7 дней</small><b style="color:var(--ok)">$${rep.money.usd}</b><span>из $${rep.money.goal} · роликов ${rep.money.min_views/1000}к+: ${rep.money.paid} из ${rep.money.week}</span><div class="ttbar"><i style="width:${Math.min(100,rep.money.usd/rep.money.goal*100)}%"></i></div></div>`
-        :`<div class="ttc"><small>Роликов разобрано</small><b>${rep.total_videos}</b><span>${names.length} акк. · ${when}</span></div>`}</div>`;
+        :`<div class="ttc"><small>Прошли порог оффера</small><b style="color:${passed>=20?"var(--ok)":"var(--txt)"}">${passed}%</b><span>роликов: ${rep.total_videos} · ${names.length} акк. · ${when}</span></div>`}</div>`;
     if(rep.money&&rep.money.near.length)h+=`<div class="ttbox" style="margin-bottom:12px"><h4>Почти в выплате (до ${rep.money.min_views/1000}к не хватает чуть-чуть)</h4>${rep.money.near.map(v=>`<div class="vrow" data-u="${esc(v.url)}"><div class="v">${fN(v.views)}</div><div class="d">${esc(v.desc||"без описания")}<small>@${esc(v.acc)}</small></div></div>`).join("")}</div>`;
     if(rep.errors&&rep.errors.length)h+=`<p class="res bad" style="margin:0 0 10px">${rep.errors.map(esc).join("<br>")}</p>`;
     if(ai.main)h+=`<div class="ttmain"><small>Главное</small>${esc(ai.main)}</div>`;
     else h+=`<p class="note" style="text-align:left">Разбора от Claude нет: проверь ключ Claude в настройках. Цифры ниже собраны.</p>`;
     if(ai.main)h+=`<div class="ttgrid"><div class="ttbox good"><h4>Что работает</h4>${list(ai.works)}</div><div class="ttbox bad"><h4>Что убивает охват</h4>${list(ai.kills)}</div>
       <div class="ttbox"><h4>План на 7 дней</h4>${list(ai.plan)}</div><div class="ttbox"><h4>Какие клипы брать</h4>${list(ai.next_clips)}</div></div>`;
-    h+=`<div class="ttbox" style="margin-bottom:12px"><h4>Аккаунты</h4><table class="tttab"><tr><th>Аккаунт</th><th>Роликов</th><th>Медиана</th><th>Максимум</th><th>Прострелов 10к+</th><th>Застряли</th><th>Вовлеч.</th><th>За неделю</th></tr>
+    h+=`<div class="ttbox" style="margin-bottom:12px"><h4>Аккаунты</h4><table class="tttab"><tr><th>Аккаунт</th><th>Роликов</th><th>Медиана</th><th>Максимум</th><th>${rep.offers?"Прошли порог":"Прострелов 10к+"}</th><th>Застряли</th><th>Вовлеч.</th><th>За неделю</th></tr>
       ${names.map(n=>{const a=A[n],v=verd[n];return `<tr><td><b>@${esc(n)}</b>${v?`<div class="verd">${esc(v.verdict||"")}${(v.fix||[]).length?"<br>→ "+v.fix.map(esc).join("<br>→ "):""}</div>`:""}</td>
-        <td class="n">${a.videos}</td><td class="n">${fN(a.median)}</td><td class="n">${fN(a.max)}</td><td class="n">${a.hits}</td><td class="n" style="color:${a.stuck>60?"var(--bad)":"inherit"}">${a.stuck}%</td><td class="n">${a.eng}%</td><td class="n">${a.last7} шт.</td></tr>`}).join("")}</table></div>`;
+        <td class="n">${a.videos}</td><td class="n">${fN(a.median)}</td><td class="n">${fN(a.max)}</td><td class="n" style="color:${rep.offers&&a.passed>=20?"var(--ok)":"inherit"}">${rep.offers?(a.passed||0)+"%":a.hits}</td><td class="n" style="color:${a.stuck>60?"var(--bad)":"inherit"}">${a.stuck}%</td><td class="n">${a.eng}%</td><td class="n">${a.last7} шт.</td></tr>`}).join("")}</table></div>`;
     if((rep.duplicates||[]).length)h+=`<div class="ttbox bad" style="margin-bottom:12px"><h4>Один клип на нескольких аккаунтах: ${rep.duplicates.length}</h4>
       <p class="note" style="text-align:left;margin:0 0 6px">TikTok обычно показывает только первую копию, остальные режет. Давай каждому аккаунту свои клипы.</p>
       ${rep.duplicates.slice(0,6).map(g=>`<div style="margin:6px 0">${g.map(v=>`<span class="tag">@${esc(v.acc)} · ${fN(v.views)}</span>`).join(" ")} <span class="note">${esc((g[0].desc||"").slice(0,70))}</span></div>`).join("")}</div>`;

@@ -667,7 +667,7 @@ def build_force(fmt_key, rects):
 
 
 def make_preview(clip, fmt_key, rects, captions, sub_y, t, png, cfg, style=None, font=None, content=None, video=0,
-                 sub_anim=None, zoom=True):
+                 sub_anim=None, zoom=True, sub_look=None):
     """Быстро рисует один кадр: как ролик будет выглядеть с этой камерой, форматом и субтитрами.
     Возвращает {"png", "sub_y", "sub_auto"} или None."""
     fmt, force, want_satis = build_force(fmt_key, rects)
@@ -677,7 +677,7 @@ def make_preview(clip, fmt_key, rects, captions, sub_y, t, png, cfg, style=None,
         force["captions"] = False
     if sub_y:
         force["sub_y"] = int(sub_y)
-    force.update(style=style, font=font, content=content, sub_anim=sub_anim, zoom=zoom)
+    force.update(style=style, font=font, content=content, sub_anim=sub_anim, zoom=zoom, sub_look=sub_look or "")
     clip = Path(clip)
     sat = m.pick_satis(clip, cfg, force=True) if want_satis else None
     pv = {"t": t, "png": str(png)}
@@ -705,7 +705,8 @@ def run_job(job, cfg, enc, log=print):
     if job.get("sub_y"):
         force["sub_y"] = int(job["sub_y"])           # положение субтитров задано вручную
     force.update(style=job.get("style"), font=job.get("font"), content=job.get("content"),
-                 sub_anim=job.get("sub_anim"), zoom=job.get("zoom", True), teaser=job.get("teaser", True))
+                 sub_anim=job.get("sub_anim"), zoom=job.get("zoom", True), teaser=job.get("teaser", True),
+                 sub_look=job.get("sub_look") or "")
     if job.get("banner"):
         force["banner"] = job["banner"]              # баннер оффера, выбранный в окне для этого клипа
     edit = job.get("edit") or None                   # правки из редактора: обрезка, вырезанные куски, баннер, субтитры
@@ -762,7 +763,7 @@ def run_job(job, cfg, enc, log=print):
             prev = {}
     p.update(res)
     p["job"] = {k: job.get(k) for k in ("fmt_key", "rects", "captions", "sub_y", "style", "font", "content",
-                                        "sub_anim", "zoom", "banner", "title", "streamer", "teaser")}
+                                        "sub_anim", "zoom", "banner", "title", "streamer", "teaser", "sub_look")}
     p["edit"] = edit or prev.get("edit")
     if edit:
         p["edited"] = True

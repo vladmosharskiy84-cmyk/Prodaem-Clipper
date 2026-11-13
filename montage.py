@@ -1159,11 +1159,14 @@ def write_ass(path, title, words, segs, split_out, ban_dur, total, sub_y, cfg,
     if st_.get("box"):
         s_tail = f"{bgr(st_['box'])},&H00000000,1,0,0,0,100,100,0,0,3,16,0,8,40,40,0,1"
     else:
-        s_tail = "&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,8,0,8,40,40,0,1"
+        s_tail = f"&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,{st_.get('bord', 8)},0,8,40,40,0,1"
     l1, l2 = split_title(title)
     longest = max(len(l1), len(l2), 1)
     tsize = title_size if longest <= 18 else max(36, int(title_size * 18 / longest))
     font, bold = font_face(cfg["font"])
+    sfont, sbold = font, bold
+    if st_.get("look"):                              # стиль из библиотеки: свой шрифт у субтитров
+        sfont, sbold = look_font(st_["look"], any(_has_cyr(w.get("t")) for w in words))
     head = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {W}
@@ -1173,7 +1176,7 @@ WrapStyle: 2
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Title,{font},{tsize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,{bold},0,0,0,100,100,0,0,1,6,0,8,{cfg.get('side_margin', 80)},{cfg.get('side_margin', 80)},{title_y},1
-Style: Sub,{font},{cfg['sub_size']},{s_fg},{s_fg},{s_tail.replace(",1,0,0,0,100,", f",{bold},0,0,0,100,", 1)}
+Style: Sub,{sfont},{cfg['sub_size']},{s_fg},{s_fg},{s_tail.replace(",1,0,0,0,100,", f",{sbold},0,0,0,100,", 1)}
 Style: Tag,{font},40,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,{bold},0,0,0,100,100,0,0,3,10,0,5,0,0,0,1
 Style: Acc,{font},{cfg['sub_size']},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,{bold},0,0,0,100,100,0,0,1,7,0,5,0,0,0,1
 Style: AccBox,{font},{cfg['sub_size']},&HFF000000,&HFF000000,&H00000000,&HFF000000,{bold},0,0,0,100,100,0,0,3,13,0,5,0,0,0,1
@@ -1199,7 +1202,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     anim = cfg.get("sub_anim") or "pop"
     timed = []                                       # (начало, конец, текст, пауза перед словом)
     for i, w in enumerate(words):
-        txt = censor(w["t"]).upper()
+        txt = censor(w["t"])
+        txt = txt.upper() if st_.get("up", True) else txt
         if not txt:
             continue
         s = shift(w["s"])
@@ -1239,6 +1243,7 @@ def sub_events(timed, anim, sub_y, cfg, st_, accent, banner_starts):
     if anim == "none":                               # ролик без субтитров: речь всё равно нужна для вырезки пауз
         return out
     if anim == "soft":                               # одно слово, чёткое, мягкая тень, лёгкий подъём при появлении
+        soft_c = bgr(st_.get("fg") or (255, 255, 255)) if st_.get("look") else "&HFFFFFF&"
         for s, e, txt, *_ in timed:
             size = int(base * 1.1) if len(txt) <= 9 else int(base * 1.1 * 9 / len(txt))
             if s <= 0.001:                           # слово с самого начала (и кадр-пример): сразу на месте
@@ -1249,7 +1254,7 @@ def sub_events(timed, anim, sub_y, cfg, st_, accent, banner_starts):
             out.append(f"Dialogue: 0,{ass_time(s)},{ass_time(e)},Sub,,0,0,0,,"
                        rf"{{{p_sh}{a}\c&H000000&\alpha&H48&\blur14}}{txt}")
             out.append(f"Dialogue: 1,{ass_time(s)},{ass_time(e)},Sub,,0,0,0,,"
-                       rf"{{{p_tx}{a}\c&HFFFFFF&}}{txt}")
+                       rf"{{{p_tx}{a}\c{soft_c}}}{txt}")
         return out
     if st_.get("accent_box"):                        # Дота-подача: фраза, ключевые слова на цветных плашках
         return accent_events(timed, sub_y, cfg, st_, banner_starts)
@@ -1263,7 +1268,7 @@ def sub_events(timed, anim, sub_y, cfg, st_, accent, banner_starts):
                 fx = (rf"{{\pos({x},{y})\fs{size}\fscx88\fscy88\frz-7\t(0,110,\fscx100\fscy100\frz5)"
                       rf"\t(110,220,\frz-3)\t(220,330,\frz0)}}")
             elif anim == "glow":
-                fx = (rf"{{\pos({x},{y})\fs{size}\bord6\3c{bgr(accent)}\blur4\fscx85\fscy85"
+                fx = (rf"{{\pos({x},{y})\fs{size}\bord6\3c{bgr(st_.get('glow') or accent)}\blur4\fscx85\fscy85"
                       rf"\t(0,90,\fscx100\fscy100)\t(0,250,\blur2)}}")
             else:
                 fx = rf"{{\pos({x},{y})\fs{size}\fscx85\fscy85\t(0,90,\fscx100\fscy100)}}"
@@ -1285,7 +1290,9 @@ def sub_events(timed, anim, sub_y, cfg, st_, accent, banner_starts):
         chunks.append(cur)
     fg = st_.get("fg") or (255, 230, 0)
     box = st_.get("box")
-    if box:                                          # плашки: у звучащего слова своя яркая плашка и тёмные буквы
+    if st_.get("look"):                              # стиль из библиотеки: цвета заданы явно
+        hl_box, hl, rest = st_.get("hlbox"), st_.get("hl") or (255, 230, 0), fg
+    elif box:                                          # плашки: у звучащего слова своя яркая плашка и тёмные буквы
         hl_box = (255, 230, 0) if abs(box[0] - 255) + abs(box[1] - 230) + abs(box[2]) > 120 else (255, 255, 255)
         hl, rest = (10, 10, 10), fg
     else:
@@ -1989,9 +1996,10 @@ def get_font(key, log=None):
     mp = _font_map()
     if key in mp and (FONT_DIR / mp[key]["file"]).exists():
         return mp[key]["name"] if mp[key].get("ok") else None
-    if key not in FONT_LIB or time.time() - _FONT_FAIL.get(key, 0) < 600:
+    lib = dict(LOOK_FONTS, **FONT_LIB)
+    if key not in lib or time.time() - _FONT_FAIL.get(key, 0) < 600:
         return None                                  # недавно не скачался: не ждём сеть на каждом примере
-    fam, wt = FONT_LIB[key]
+    fam, wt = lib[key]
     try:
         import requests
         css = requests.get(f"https://fonts.googleapis.com/css?family={fam.replace(' ', '+')}:{wt}&subset=cyrillic,latin",
@@ -2046,6 +2054,89 @@ def font_face(key):
 
 
 FONTS = list(FONT_LIB) + SYS_FONTS
+
+# ---------- библиотека стилей субтитров ----------
+# шрифты только для стилей субтитров (в общем меню шрифтов их нет: часть без русских букв)
+LOOK_FONTS = {"Bangers": ("Bangers", 400), "Luckiest Guy": ("Luckiest Guy", 400)}
+# какие алфавиты есть в шрифте (по Google Fonts): c — кириллица, cx — казахский и др., l — латиница, lx — польский и др.
+FONT_SUBSETS = {"Montserrat": "c cx l lx vi", "Inter": "c cx l lx vi el", "Rubik": "c cx l lx", "Golos Text": "c cx l lx",
+                "Unbounded": "c cx l lx vi", "Russo One": "c l lx", "Oswald": "c cx l lx vi", "Dela Gothic One": "c l lx vi el",
+                "Exo 2": "c cx l lx vi", "Manrope": "c cx l lx vi el", "Anton": "l lx vi", "Comfortaa": "c cx l lx vi el",
+                "Ubuntu": "c cx l lx el", "Lobster": "c cx l lx vi", "Pacifico": "c cx l lx vi", "Press Start 2P": "c cx l lx el",
+                "Bangers": "l lx vi", "Luckiest Guy": "l lx", "Caveat": "c cx l lx", "Marck Script": "c l lx",
+                "Permanent Marker": "l", "Playfair Display": "c l lx vi", "Cormorant Garamond": "c cx l lx vi",
+                "Impact": "c l lx el"}
+Y, WH, BK = (255, 230, 0), (255, 255, 255), (12, 12, 16)
+# стиль субтитров = шрифт + анимация + цвета. fg — буквы, hl — звучащее слово во фразе, box — плашка под словами,
+# hlbox — плашка звучащего слова, bord — обводка, glow — цвет неона, up — заглавными, fb — шрифт, если нет нужных букв
+SUB_LOOKS = [
+    {"key": "hormozi", "name": "Hormozi", "font": "Montserrat Black", "anim": "karaoke", "fg": WH, "hl": Y, "bord": 8, "cats": "pop hype"},
+    {"key": "hormozi_green", "name": "Hormozi Green", "font": "Montserrat Black", "anim": "karaoke", "fg": WH, "hl": (60, 255, 70), "bord": 8, "cats": "pop hype"},
+    {"key": "beast", "name": "Beast", "font": "Bangers", "fb": "Russo One", "anim": "karaoke", "fg": WH, "hl": (70, 255, 60), "bord": 10, "cats": "pop hype comic"},
+    {"key": "bold_yellow", "name": "Bold Yellow", "font": "Anton", "fb": "Oswald Bold", "anim": "karaoke", "fg": WH, "hl": Y, "bord": 8, "cats": "pop hype"},
+    {"key": "pop", "name": "Pop", "font": "Montserrat Black", "anim": "pop", "fg": WH, "bord": 9, "cats": "pop word"},
+    {"key": "bounce", "name": "Bounce", "font": "Rubik Black", "anim": "bounce", "fg": Y, "bord": 9, "cats": "hype word"},
+    {"key": "soft", "name": "Soft Shadow", "font": "Golos Text Black", "anim": "soft", "fg": WH, "cats": "min word pop"},
+    {"key": "black_box", "name": "Black Box", "font": "Montserrat ExtraBold", "anim": "karaoke", "fg": WH, "box": BK, "hl": BK, "hlbox": Y, "cats": "box pop"},
+    {"key": "purple_pill", "name": "Purple Pill", "font": "Unbounded Black", "anim": "karaoke", "fg": WH, "box": (120, 60, 255), "hl": (20, 20, 30), "hlbox": WH, "cats": "box hype"},
+    {"key": "word_box", "name": "Word Box", "font": "Rubik Black", "anim": "pop", "fg": BK, "box": Y, "cats": "box word"},
+    {"key": "fire_box", "name": "Fire Box", "font": "Montserrat Black", "anim": "karaoke", "fg": WH, "box": (24, 20, 22), "hl": WH, "hlbox": (255, 92, 26), "cats": "box game"},
+    {"key": "neon_pink", "name": "Neon Pink", "font": "Rubik Bold", "anim": "glow", "fg": WH, "glow": (255, 60, 200), "cats": "neon word"},
+    {"key": "neon_cyan", "name": "Neon Cyan", "font": "Exo 2 Black", "anim": "glow", "fg": WH, "glow": (0, 229, 255), "cats": "neon word game"},
+    {"key": "neon_lime", "name": "Neon Lime", "font": "Russo One", "anim": "glow", "fg": (230, 255, 220), "glow": (110, 255, 40), "cats": "neon word game"},
+    {"key": "comic", "name": "Comic Pop", "font": "Luckiest Guy", "fb": "Rubik Black", "anim": "bounce", "fg": Y, "bord": 10, "cats": "comic hype word"},
+    {"key": "meme", "name": "Impact Meme", "font": "Impact", "anim": "pop", "fg": WH, "bord": 7, "cats": "comic word"},
+    {"key": "wiggle", "name": "Wiggle", "font": "Rubik Black", "anim": "wiggle", "fg": (255, 140, 0), "bord": 9, "cats": "comic word"},
+    {"key": "pixel", "name": "Pixel", "font": "Press Start 2P", "anim": "pop", "fg": (124, 255, 43), "bord": 7, "cats": "game word"},
+    {"key": "twitch", "name": "Twitch", "font": "Montserrat Black", "anim": "karaoke", "fg": WH, "hl": (145, 70, 255), "bord": 8, "cats": "pop game"},
+    {"key": "kick", "name": "Kick", "font": "Russo One", "anim": "karaoke", "fg": WH, "box": BK, "hl": BK, "hlbox": (83, 252, 24), "cats": "box game hype"},
+    {"key": "esports", "name": "Esports", "font": "Russo One", "anim": "karaoke", "fg": WH, "hl": (255, 90, 30), "bord": 8, "cats": "game hype"},
+    {"key": "cyber", "name": "Cyber", "font": "Exo 2 Black", "anim": "karaoke", "fg": WH, "hl": (0, 229, 255), "bord": 7, "cats": "game"},
+    {"key": "dela", "name": "Dela Drop", "font": "Dela Gothic One", "anim": "bounce", "fg": WH, "bord": 9, "cats": "game hype word"},
+]
+LOOK_BY_KEY = {lk["key"]: lk for lk in SUB_LOOKS}
+
+
+def _font_family(key):
+    return LOOK_FONTS.get(key) or FONT_LIB.get(key) or (key, 400)
+
+
+def looks_public():
+    """Стили субтитров для окна-библиотеки: всё, что нужно, чтобы нарисовать карточку на CSS."""
+    hx = lambda c: "#{:02X}{:02X}{:02X}".format(*c) if c else None
+    out = []
+    for lk in SUB_LOOKS:
+        fam, wt = _font_family(lk["font"])
+        fbf, fbw = _font_family(lk.get("fb") or lk["font"])
+        out.append({"key": lk["key"], "name": lk["name"], "font": lk["font"], "family": fam, "weight": wt,
+                    "fb_family": fbf, "fb_weight": fbw, "subsets": FONT_SUBSETS.get(fam, "c l"), "anim": lk["anim"],
+                    "fg": hx(lk.get("fg")), "hl": hx(lk.get("hl")), "box": hx(lk.get("box")), "hlbox": hx(lk.get("hlbox")),
+                    "glow": hx(lk.get("glow")), "bord": lk.get("bord", 0), "up": lk.get("up", True), "cats": lk["cats"].split()})
+    return out
+
+
+def _has_cyr(text):
+    return bool(re.search(r"[А-Яа-яЁёІіЇїЄєҐґ]", text or ""))
+
+
+def look_font(lk, cyr_text):
+    """(имя шрифта для субтитров, жирность): шрифт стиля, а если в нём нет русских букв — запасной."""
+    key = lk["font"]
+    if key in SYS_FONTS:
+        return key, 0
+    if cyr_text and "c" not in FONT_SUBSETS.get(_font_family(key)[0], "c").split():
+        key = lk.get("fb") or "Montserrat Black"
+    if key in FONT_LIB:
+        name = get_font(key)
+        if name:
+            return name, 0
+    mp = _font_map()
+    if not (key in mp and (FONT_DIR / mp[key]["file"]).exists()):
+        get_font(key)                                # скачивает в папку fonts (и шрифты без кириллицы)
+        mp = _font_map()
+    if key in mp and (FONT_DIR / mp[key]["file"]).exists() and (mp[key].get("ok") or not cyr_text):
+        return mp[key]["name"], 0
+    return "Arial", 1
 
 
 def _lin(c1, c2, size):
@@ -2880,6 +2971,14 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
                 sub_y += 100
                 ban_cy += 100
             show_title = False
+    look_key = (force or {}).get("sub_look") if "sub_look" in (force or {}) else cfg.get("sub_look")
+    if look_key == "none":                       # библиотека: «Без субтитров»
+        cfg = dict(cfg, sub_anim="none")
+    elif look_key in LOOK_BY_KEY:                # стиль субтитров из библиотеки поверх стиля монтажа
+        lk = LOOK_BY_KEY[look_key]
+        sub_style = {k: lk[k] for k in ("fg", "hl", "box", "hlbox", "bord", "glow", "up") if k in lk}
+        sub_style["look"] = lk
+        cfg = dict(cfg, sub_anim=lk["anim"])
 
     all_boxes = list(dict.fromkeys(d + (r,) for _, d, r in wins)) + ([SAT + (44,)] if satis else [])
     key = hashlib.md5(repr([style, all_boxes, accent, rot, progress_y]).encode()).hexdigest()[:10]

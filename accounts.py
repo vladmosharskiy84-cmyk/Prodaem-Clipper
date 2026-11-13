@@ -514,6 +514,7 @@ def account_stats(vs):
         if v["ts"]:
             hours.setdefault(datetime.fromtimestamp(v["ts"]).hour, []).append(v["views"])
     return {"videos": len(vs), "total": sum(views), "median": _med(views), "max": max(views or [0]),
+            "passed": round(sum(1 for v in vs if v["views"] >= v.get("min", HIT)) / max(1, len(vs)) * 100),
             "hits": sum(1 for x in views if x >= HIT), "stuck": round(sum(1 for x in views if x <= PROBE_VIEWS) / max(1, len(views)) * 100),
             "eng": round(st.median(eng), 1) if eng else 0, "last7": len(last),
             "dur_med": round(st.median([v["dur"] for v in vs if v["dur"]]) if any(v["dur"] for v in vs) else 0)}
@@ -553,9 +554,10 @@ HOUR_LABELS = [(0, "ночь 0–6"), (1, "утро 6–12"), (2, "день 12�
 REPORT_PROMPT = """Ты продюсер коротких видео в TikTok. Перед тобой статистика аккаунтов клиппера: он режет клипы
 со стримов по Dota 2 (и иногда другим играм) и выкладывает их в TikTok. Ролики делает программа: вертикальный
 формат, камера стримера, субтитры, баннер партнёрки в середине ролика. Обычно ролики застревают на 300-700
-просмотрах (TikTok дал пробный показ и не пошёл дальше). Цель автора: {goal} просмотров на одном ролике за неделю.
-Деньги: партнёрка платит ${rate} за 1000 просмотров из СНГ, но только за ролики, набравшие от {min_views} просмотров.
-Ролики ниже порога не приносят ничего, поэтому важна не частота, а доля роликов, перешедших порог. Цель на неделю: ${money_goal}.
+просмотрах (TikTok дал пробный показ и не пошёл дальше).
+Деньги: у аккаунтов разные офферы (поле offers: порог min — с какого числа просмотров ролик идёт в оплату, 0 = платят
+за любые; rate — $ за 1000 просмотров; own — свой проект без оплаты). Ролики ниже порога своего оффера не приносят
+ничего, поэтому важна не частота, а доля роликов, перешедших порог (поле passed у аккаунта, %).
 
 Данные (JSON):
 {data}
@@ -578,7 +580,7 @@ settings: стример, стиль и формат монтажа в прог�
  "works": ["что работает, с цифрами", ...],
  "kills": ["что убивает охват, с цифрами", ...],
  "accounts": [{{"acc": "ник", "verdict": "коротко что с ним", "fix": ["что поменять", ...]}}],
- "plan": ["план на 7 дней к цели, по шагам", ...],
+ "plan": ["что делать эти 7 дней, чтобы больше роликов переходили порог оффера, по шагам", ...],
  "next_clips": ["какие моменты искать и выкладывать в первую очередь", ...]}}"""
 
 
@@ -590,9 +592,7 @@ def claude_report(data, cfg, say):
         return None
     import requests
     say("Claude разбирает статистику…")
-    prompt = REPORT_PROMPT.format(goal=fmt_n(data.get("goal", 100000)), rate=data.get("rate", 1),
-                                  min_views=data.get("min_views", 6000), money_goal=data.get("money_goal", 150),
-                                  data=json.dumps(data, ensure_ascii=False)[:60000])
+    prompt = REPORT_PROMPT.format(data=json.dumps(data, ensure_ascii=False)[:60000])
     models = [cfg.get("report_model", "claude-haiku-5-5"), cfg.get("claude_model", "claude-haiku-4-5")]
     last = ""
     for model in dict.fromkeys(models):
@@ -638,7 +638,8 @@ def hot_streamers(videos, s, days=21):
     cut = time.time() - days * 86400
     for v in videos:
         st = (v.get("local") or {}).get("streamer")
-        if st and v["views"] >= s.get("min_views", 6000) and (not v["ts"] or v["ts"] >= cut):
+        need = v.get("min") or s.get("min_views", 6000)          # порог оффера этого аккаунта
+        if st and v["views"] >= need and (not v["ts"] or v["ts"] >= cut):
             hot[st] = max(hot.get(st, 0), v["views"])
     return hot
 
@@ -695,6 +696,38 @@ def analyze(handles, goal, cfg, say=print, deep=True, ai=True):
             say(str(e))
     if not videos:
         raise Stop("ни один профиль не открылся. " + " ".join(errors))
+    offers = {h: {"name": "партнёрка", "min": s["min_views"], "rate": s["rate"]} for h in handles}
+    return _build(videos, handles, errors, cfg, say, deep, ai, offers, old=True)
+
+
+def analyze_server(srv, cfg, say=print, deep=True, ai=True):
+    """Разбор по цифрам с сервера HQ (он сам собирает их раз в час): браузер не открывается, TikTok с ПК не трогаем.
+    Аккаунты и их офферы — из вкладки «Офферы и аккаунты»."""
+    accs = {h: a for h, a in (srv.get("accounts") or {}).items() if a.get("on", True)}
+    if not accs:
+        raise Stop("нет аккаунтов: добавь их на вкладке «Офферы и аккаунты»")
+    offs = srv.get("offers") or {}
+    offers = {}
+    for h, a in accs.items():
+        o = offs.get(a.get("offer")) or {}
+        offers[h] = {"name": a.get("offer", ""), "min": int(o.get("min") or 0), "rate": float(o.get("rate") or 0),
+                     "own": bool(o.get("own"))}
+    videos = [{"id": str(v["id"]), "acc": v["acc"], "url": v["url"], "desc": v.get("desc") or "", "views": int(v.get("views") or 0),
+               "likes": int(v.get("likes") or 0), "comments": int(v.get("comments") or 0), "shares": int(v.get("shares") or 0),
+               "saves": int(v.get("saves") or 0), "dur": float(v.get("dur") or 0), "ts": int(v.get("ts") or 0)}
+              for v in srv.get("videos") or [] if v.get("acc") in accs]
+    if not videos:
+        raise Stop("сервер ещё не собрал ролики: подожди часовой сбор или нажми «Обновить сейчас» на вкладке «Сегодня»")
+    errors = [f"@{r['acc']}: не открывается" for r in srv.get("rows") or [] if r.get("on") and r.get("fails")]
+    say(f"роликов с сервера: {len(videos)}")
+    return _build(videos, list(accs), errors, cfg, say, deep, ai, offers)
+
+
+def _build(videos, handles, errors, cfg, say, deep, ai, offers, old=False):
+    """offers: аккаунт → {name, min, rate, own} — порог и ставка его оффера. old=True: старый сбор с ПК (одна ставка)."""
+    s = load_settings()
+    for v in videos:                             # порог «залетел» у каждого ролика — по его офферу
+        v["min"] = (offers.get(v["acc"]) or {}).get("min") or HIT
     hist = save_snapshot(videos)
     g7, g7_acc, has_hist = growth(videos, hist, 7)
     g1, _, has1 = growth(videos, hist, 1)
@@ -730,8 +763,12 @@ def analyze(handles, goal, cfg, say=print, deep=True, ai=True):
                 settings_perf.setdefault(k, {}).setdefault(v["local"][k] or "—", []).append(v["views"])
     settings_perf = {k: sorted([{"value": a, "n": len(b), "median": _med(b), "max": max(b)} for a, b in d.items()],
                                key=lambda x: -x["median"]) for k, d in settings_perf.items()}
-    data = {"goal": s["goal"], "rate": s["rate"], "min_views": s["min_views"], "money_goal": s["money_goal"],
-            "money_week": money(videos, s), "accounts": accs, "best": short(best),
+    off_info = {}
+    for h, o in offers.items():
+        x = off_info.setdefault(o.get("name") or "—", {"min": o.get("min", 0), "rate": o.get("rate", 0),
+                                                        "own": bool(o.get("own")), "accounts": []})
+        x["accounts"].append(h)
+    data = {"offers": off_info, "accounts": accs, "best": short(best),
             "growth_7d": g7, "growth_7d_by_account": g7_acc,
             "by_duration": buckets(videos, dur_bucket, DUR_LABELS), "by_hour": buckets(videos, hour_bucket, HOUR_LABELS),
             "settings": settings_perf, "duplicates": [[short(v) for v in g] for g in dups[:10]],
@@ -746,15 +783,16 @@ def analyze(handles, goal, cfg, say=print, deep=True, ai=True):
             say("слоты выхода по просмотрам: " + ", ".join(slots))
         s["slots"] = slots
     save_settings(s)
-    rep = {"time": time.time(), "handles": handles, "goal": s["goal"], "errors": errors,
+    rep = {"time": time.time(), "handles": handles, "errors": errors, "offers": off_info, "source": "pc" if old else "server",
            "accounts": accs, "best": {**short(best), "url": best["url"]},
            "growth_7d": g7, "growth_1d": g1 if has1 else None, "has_history": has_hist,
            "by_duration": data["by_duration"], "by_hour": data["by_hour"], "settings": settings_perf,
            "duplicates": [[{**short(v), "url": v["url"]} for v in g] for g in dups],
            "top": [{**short(v), "url": v["url"]} for v in top],
            "flops": [{**short(v), "url": v["url"]} for v in flops],
-           "total_videos": len(videos), "ai": ai, "money": money(videos, s),
-           "hot": s.get("hot") or {}, "slots": s.get("slots")}
+           "total_videos": len(videos), "ai": ai, "hot": s.get("hot") or {}, "slots": s.get("slots")}
+    if old:                                      # старый сбор с ПК: одна ставка на всё
+        rep["money"] = money(videos, s)
     DIR.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(json.dumps(rep, ensure_ascii=False, indent=1), encoding="utf-8")
     say("готово")
@@ -803,7 +841,7 @@ def report_text(rep):
         best = max(accs, key=lambda a: accs[a].get("median", 0))
         for a, v in sorted(accs.items(), key=lambda kv: -kv[1].get("median", 0)):
             lines.append(f"{'⭐' if a == best else '•'} @{a}: медиана {fmt_n(v.get('median', 0))}, "
-                         f"застряли {v.get('stuck', 0)}%, за неделю {v.get('last7', 0)} шт.")
+                         f"прошли порог {v.get('passed', 0)}%, застряли {v.get('stuck', 0)}%, за неделю {v.get('last7', 0)} шт.")
     near = (mo.get("near") or [])[:3]
     if near:
         lines.append("\nПочти в выплате: " + ", ".join(f"{fmt_n(x['views'])} @{x['acc']}" for x in near))
