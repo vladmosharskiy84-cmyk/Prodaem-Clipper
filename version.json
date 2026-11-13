@@ -1,22 +1,22 @@
 {
-  "version": "2026.11.11 23:53",
-  "time": 1794433981.180778,
-  "notes": "Аналитика TikTok: вкладки «Сегодня» (деньги, план по аккаунтам, Найдено→Собирается→Готово→Залито) и «Офферы и аккаунты» — у каждого свои офферы, пороги и ставки, отметки просмотров приходят в темы Telegram, просмотры считает сервер раз в час даже при выключенном ПК (ссылку подключения даёт Влад). В очереди: «Автопоиск вкл/выкл» для каждого профиля и «Очистить».",
+  "version": "2026.11.13 20:38",
+  "time": 1794595095.6295378,
+  "notes": "Исправлена привязка тем Telegram: бот сам принимает /clips и /my, кнопка «Привязать темы» больше не пишет «не вижу группу». Подсказка: в нужной теме можно просто написать /here Имя профиля.",
   "files": {
-    "montage.py": "9007b3dc767a87e77670d96102a6c3e84e1f97c71d1f603a988784da9741e3c9",
+    "montage.py": "f9ca1dd0e4a1b489dadbcd21fbbac785b333e091490adc56c07754699aeb6fe3",
     "review.py": "0f7d8b02231a9bd13f74d8625147bec9661fc46bf76461661dafc8d598c7f04c",
     "top5.py": "d70f586b96f327d8cbcc08d8959d494cf5cc450138498038d33afc8e9460cc67",
     "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
     "clipfinder.py": "0cd908d65261037025109ab958809f78df8cf0984b47e1441137a6888cbe0e25",
     "updater.py": "4b0fb15e40af396127799ca6c6ca07ac81563f838a87cfea4f0c2600ac734981",
     "webapp.py": "3e05471c9f62917faa1b4d8f4299980ed9d265600ed4ffbb57157db66d95d2ce",
-    "ui.html": "744d4c9ae1a03870702978dd1e8990272b1b3e214e485428ccdf26d0972b39f3",
+    "ui.html": "7bc8a55839cc1e7a9afcc4fb3f60ce04811db6d0dc8bd15deacbf97bbb23c1b6",
     "logo_src.png": "e43b51bb73da86652be2c2adac971e5b39557d895d84a4c2449e9b99f95c1739",
     "highlights.py": "1e9b6942cfbc2de55466c191e0d50fe8db23d159e5ae78d98fcb826623e5091d",
     "accounts.py": "7a8d5d533418f0168a18b4942ad09cd0de1b7473d55695197f222b64aa57c17b",
     "agents.py": "08803606e98c469d892fcde27d0a095b57f5753ccd4c426ba7cb1afaf53a44d3",
     "leaders.py": "06951d301f174cb68aed842807048974977038e49ae9439738ac155ab69a7dc1",
-    "tgbot.py": "254cd803ea1298a4f2455140011761b18d944d1dac6f50d812c2d9ba5a9bbf79",
+    "tgbot.py": "4f5a6f595e3f2473919aeda0ff1e72d910bc8c09093d4f063b90edca805ed95c",
     "blogger.py": "0a714d1dff46b2deb9b5d7ed7f085e4537038037dd76a49c41f8b59af5ddeac0",
     "reaction.py": "6080db0aad9baaee2c5a5c9d5485976f34a039b266297b22a4181b9da6152dab"
   }

@@ -1621,6 +1621,17 @@ def tg_setup():
             found["clips"] = thread
         elif text.startswith("/my"):
             found["manual"] = thread
+    try:                                         # бот программы забирает сообщения сам и кладёт /clips и /my сюда
+        seen = json.loads((BASE / "telegram_seen.json").read_text(encoding="utf-8"))
+        if seen.get("chat", {}).get("id"):
+            if not group or group.get("id") != seen["chat"]["id"]:
+                group, found, names = seen["chat"], {}, {}
+            for k in ("clips", "manual"):
+                if k in seen and k not in found:
+                    found[k] = seen[k]
+            names.update({int(t): v for t, v in (seen.get("names") or {}).items() if str(t).lstrip("-").isdigit()})
+    except Exception:
+        pass
     if not group:
         sys.exit("Не вижу группу. Добавь бота в группу администратором и отправь команды в темах: "
                  "/clips в теме для клипов и /my в теме для своего видео.")

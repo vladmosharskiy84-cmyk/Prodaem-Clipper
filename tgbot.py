@@ -269,6 +269,35 @@ def set_topic(token, chat_id, thread, want):
     return found, names
 
 
+def remember_seen(token, msg, kind):
+    """/clips или /my в теме: бот программы забирает все сообщения себе, поэтому кнопка «Привязать темы»
+    сама их уже не видит. Запоминаем тему в файл каждого профиля с этим ботом — кнопка берёт её оттуда."""
+    chat = msg.get("chat") or {}
+    topic = (msg.get("reply_to_message") or {}).get("forum_topic_created") or {}
+    n = 0
+    for r in _profile_roots():
+        try:
+            if (r / "telegram_token.txt").read_text(encoding="utf-8-sig").strip() != token:
+                continue
+            f = r / "telegram_seen.json"
+            try:
+                seen = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:
+                seen = {}
+            if (seen.get("chat") or {}).get("id") != chat.get("id"):
+                seen = {}                                  # другая группа: начинаем заново
+            seen["chat"] = {"id": chat.get("id"), "title": chat.get("title", ""), "type": chat.get("type"),
+                            "is_forum": bool(chat.get("is_forum"))}
+            seen[kind] = msg.get("message_thread_id")
+            if topic.get("name"):
+                seen.setdefault("names", {})[str(msg.get("message_thread_id"))] = topic["name"]
+            f.write_text(json.dumps(seen, ensure_ascii=False), encoding="utf-8")
+            n += 1
+        except OSError:
+            continue
+    return n
+
+
 def set_reserve(token, chat_id, thread=None, fname="telegram_reserve.json"):
     """Запоминает группу («Запас» или «Отчёты») во всех профилях с этим же ботом."""
     n = 0
@@ -468,6 +497,21 @@ class Bot:
                 found, names = set_topic(token, msg0["chat"]["id"], msg0.get("message_thread_id"), want)
                 text = (f"✅ Сюда будут приходить ролики профиля: {', '.join(found)}." if found else
                         "Напиши так: /here Имя профиля. Профили с этим ботом: " + (", ".join(names) or "не нашёл"))
+                data = {"chat_id": msg0["chat"]["id"], "text": text}
+                if msg0.get("message_thread_id"):
+                    data["message_thread_id"] = msg0["message_thread_id"]
+                self._api(token, "sendMessage", **data)
+            return
+        if low0.split("@")[0].split()[:1] in (["/clips"], ["/my"]):   # для кнопки «Привязать темы» в настройках
+            ok_chats = allowed_chats()
+            sender = str((msg0.get("from") or {}).get("id", ""))
+            if not ok_chats or sender in ok_chats or str(msg0["chat"]["id"]) in ok_chats or m.TG_TOPICS.exists():
+                kind = "clips" if low0.startswith("/clips") else "manual"
+                n = remember_seen(token, msg0, kind)
+                text = ("✅ Запомнил эту тему для " + ("клипов" if kind == "clips" else "своих видео") +
+                        ". Теперь нажми в программе «Настройки» → «Привязать темы» (в том профиле, который должен сюда слать)."
+                        "\nПроще: напиши здесь /here Имя профиля — и сразу готово." if n else
+                        "Не нашёл профиль с этим ботом: проверь токен в настройках программы.")
                 data = {"chat_id": msg0["chat"]["id"], "text": text}
                 if msg0.get("message_thread_id"):
                     data["message_thread_id"] = msg0["message_thread_id"]
