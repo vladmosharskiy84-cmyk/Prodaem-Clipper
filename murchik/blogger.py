@@ -105,6 +105,11 @@ def resolve_style(o, src):
               "word_chest": "по слову", "word_bottom": "слово внизу", "word_red": "красные слова", "phrase": "фраза"}
         st["name"] = "Свой: " + " · ".join(ru.get(st[k], st[k]) for k in ("frame", "grade", "intro", "subs"))
     st["zgap"] = 1.3 + (h % 8) * 0.1             # как часто скачет крупность: свой ритм у каждого ПК
+    return layout(st)
+
+
+def layout(st):
+    """Размеры окна и где субтитры/заголовки — по виду кадра st["frame"]."""
     fw, fh, fr = FRAMES[st["frame"]]
     st.update(fw=fw, fh=fh, fr=fr, fx=(W - fw) // 2, fy=(H - fh) // 2)
     full = st["frame"] == "full"
@@ -113,6 +118,8 @@ def resolve_style(o, src):
         st["sub_y"] = 1450 if full else st["fy"] + fh - 95
     st["top_y"] = 430 if full else int(st["fy"] + fh * 0.2)       # огромное красное слово поверх головы
     st["title_y"] = 300 if full else max(150, st["fy"] - 150)       # заголовок: над окном или сверху экрана
+    if st.get("wide"):                              # кадр целиком: субтитры под кадром, на размытом фоне, людей не закрывают
+        st["sub_y"] = st["fy"] + fh + 140
     return st
 
 HOOK_FONTS = ["Playfair Display Italic", "Monotype Corsiva", "Marck Script", "Lora Bold Italic"]
@@ -604,16 +611,18 @@ def add_action(segs, src, dur, say=print, max_keep=6.0):
 
 def face_centers(src, segs, sw, sh):
     """Где люди в кадре: для каждого куска — середина лиц по горизонтали (доля ширины), чтобы окно держалось на них.
-    Нет лиц — как в прошлом куске. Мелкие сдвиги игнорируем, чтобы кадр не дёргался."""
+    Окно двигается только за уверенно найденными лицами (в 2 из 3 проверенных кадров куска). Шлемы, маски, спины —
+    лица не находятся, кусок считается «без лиц».
+    Возвращает (центры, доля кусков с уверенными лицами, какую ширину занимают лица — доля кадра)."""
     try:
         import cv2
     except ImportError:
-        return [0.5] * len(segs)
-    det = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        return [0.5] * len(segs), 0.0, 1.0
+    face = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     cap = cv2.VideoCapture(str(src))
-    out, last = [], 0.5
+    out, last, found, spans = [], 0.5, 0, []
     for a, b in segs:
-        xs, ws = [], []
+        xs, ws, hits = [], [], 0
         for f in (0.25, 0.5, 0.75):
             cap.set(cv2.CAP_PROP_POS_MSEC, (a + (b - a) * f) * 1000)
             ok, img = cap.read()
@@ -621,15 +630,22 @@ def face_centers(src, segs, sw, sh):
                 continue
             k = 640 / img.shape[1]
             g = cv2.cvtColor(cv2.resize(img, (640, int(img.shape[0] * k))), cv2.COLOR_BGR2GRAY)
-            for (x, y, w, h) in det.detectMultiScale(g, 1.15, 5, minSize=(28, 28)):
+            boxes = face.detectMultiScale(g, 1.1, 7, minSize=(40, 40))
+            if len(boxes):
+                hits += 1
+            for (x, y, w, h) in boxes:
                 xs.append((x + w / 2) / 640)
                 ws.append(w * h)
-        if xs:
+        if hits >= 2:                                # лицо видно уверенно — держим окно на нём
+            found += 1
+            spans.append(max(xs) - min(xs))
             c = sum(x * w for x, w in zip(xs, ws)) / sum(ws)
             last = c if abs(c - last) > 0.06 else last
         out.append(last)
     cap.release()
-    return out
+    cover = found / max(1, len(segs))
+    spread = sorted(spans)[len(spans) // 2] if spans else 1.0
+    return out, cover, spread
 
 
 def tight_segments(words, keep, dur, src, max_gap=0.22):
@@ -773,6 +789,27 @@ def _lines(words, step=14):
     return out
 
 
+def whole_phrases(words, s1, e1, back=6.0, fwd=6.0):
+    """Сдвигает границы истории к целым фразам: начало — к началу фразы (после точки или паузы ≥ 0.7 с),
+    конец — к концу фразы (точка/вопрос/восклицание или пауза ≥ 0.7 с). Не дальше back/fwd секунд."""
+    if not words:
+        return s1, e1
+    end = lambda w: str(w["t"]).strip()[-1:] in ".!?…"
+    i = next((k for k, w in enumerate(words) if w["s"] >= s1 - 0.05), None)
+    if i is not None:
+        j = i
+        while j > 0 and words[i]["s"] - words[j - 1]["s"] <= back and not end(words[j - 1])                 and words[j]["s"] - words[j - 1]["e"] < 0.7:
+            j -= 1
+        s1 = min(s1, max(0.0, words[j]["s"] - 0.25))
+    k = max((n for n, w in enumerate(words) if w["e"] <= e1 + 0.05), default=None)
+    if k is not None:
+        j = k
+        while j + 1 < len(words) and not end(words[j]) and words[j + 1]["e"] - words[k]["e"] <= fwd                 and words[j + 1]["s"] - words[j]["e"] < 0.7:
+            j += 1
+        e1 = max(e1, words[j]["e"] + 0.4)
+    return s1, e1
+
+
 def pick_stories(words, n, length, cfg, say=print, vlog=False):
     key = m.KEY_FILE.read_text(encoding="utf-8-sig").strip() if m.KEY_FILE.exists() else ""
     if not key:
@@ -832,6 +869,7 @@ def pick_stories(words, n, length, cfg, say=print, vlog=False):
         e_ok = [w["e"] for w in ws if w["e"] <= e0 + 0.8] or [e0]
         s1 = max(0.0, min(s_ok) - 0.25)
         e1 = max(e_ok) + 0.4
+        s1, e1 = whole_phrases(words, s1, e1)       # не начинать и не обрывать на полуслове
         if vlog:                                     # во влоге момент может начаться и кончиться экшеном без слов
             s1, e1 = min(s1, max(0.0, s0)), max(e1, e0)
         ok.append({"start": s1, "end": e1, "words": [str(x) for x in (st.get("words") or [])][:4],
@@ -1191,6 +1229,16 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
     vlog = bool(o.get("vlog")) and OWNER         # влог/экшн — только у владельца
     if vlog and o["cut_pauses"]:                 # стрельбу и беготню без слов не выкидываем
         segs = add_action(segs, src, dur, say)
+    fcx = [None] * len(segs)
+    if vlog:                                         # окно держится на людях, а не просто по центру
+        say("ищу людей в кадре…")
+        fcx, cover, spread = face_centers(src, segs, sw, sh)
+        crop_w = (FRAMES[st["frame"]][0] / FRAMES[st["frame"]][1]) / (sw / max(1, sh))   # какая доля ширины влезает
+        if st["frame"] != "cinema" and sw / max(1, sh) > 1.2 and (cover < 0.6 or spread > crop_w * 0.9):
+            # лица видно плохо (маски, шлемы, спины) или люди по разным краям: узкое окно отрежет их — кадр целиком
+            st = layout(dict(st, frame="cinema", wide=True))
+            fcx = [None] * len(segs)
+            say("лица видно плохо или люди по краям — показываю кадр целиком, чтобы никого не отрезать")
     total = sum(b - a for a, b in segs)
     if o["cut_pauses"]:
         say(f"паузы вырезаны: {dur - total:.1f} с, кусков {len(segs)}")
@@ -1261,14 +1309,11 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
             since = 0.0
         zs.append(last_z)
         since += b - a
-    fcx = [None] * len(segs)
-    if vlog:                                         # окно держится на лицах, а не просто по центру
-        say("ищу людей в кадре…")
-        fcx = face_centers(src, segs, sw, sh)
+    fcx = fcx if vlog else [None] * len(segs)
     for i, (a, b) in enumerate(segs):                # каждый кусок: своя крупность плана (лёгкий «зум на стыке»)
         z = zs[i]
         # широкий кадр из горизонтального исходника: подходим ближе, чтобы человек не терялся в полосе
-        bz = 1.9 if st["frame"] == "cinema" and sw / max(1, sh) > 1.2 else 1.0
+        bz = 1.9 if st["frame"] == "cinema" and not st.get("wide") and sw / max(1, sh) > 1.2 else 1.0
         cw, ch, cx, cy = card_crop(sw, sh, z * bz, box, fw, fh, fcx[i])
         fc.append(f"[0:v]trim={a:.3f}:{b:.3f},setpts=PTS-STARTPTS,crop={cw}:{ch}:{cx}:{cy},"
                   f"scale={fw}:{fh}:flags=lanczos,fps={fps},setsar=1[v{i}]")
@@ -1281,8 +1326,15 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
         fc.append(f"[cv]{grade}cas=0.4,format=rgba[cv2];[1:v]format=gray[mk];[cv2][mk]alphamerge[card]")
     else:                                            # кинокадр или весь экран: прямые края
         fc.append(f"[cv]{grade}cas=0.4[card]")
-    fc.append(f"color=c=black:s={W}x{H}:r={fps}:d={total:.3f}[bg];[bg][card]overlay={st['fx']}:{st['fy']}:shortest=1,"
-              f"ass={ass.name}:fontsdir=../fonts,format=yuv420p[vout]")
+    if st.get("wide"):                              # кадр целиком: вокруг то же видео, размытое и затемнённое
+        fc[-1] = fc[-1].replace("[card]", ",split=2[card][bgsrc]")
+        fc.append(f"[bgsrc]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=28:2,"
+                  f"eq=brightness=-0.2:saturation=0.85[bgv]")
+        fc.append(f"[bgv][card]overlay={st['fx']}:{st['fy']}:shortest=1,"
+                  f"ass={ass.name}:fontsdir=../fonts,format=yuv420p[vout]")
+    else:
+        fc.append(f"color=c=black:s={W}x{H}:r={fps}:d={total:.3f}[bg];[bg][card]overlay={st['fx']}:{st['fy']}:shortest=1,"
+                  f"ass={ass.name}:fontsdir=../fonts,format=yuv420p[vout]")
     # звук: голос ровнее; щелчки под словами крючка; музыка тише голоса и прячется, когда он говорит
     mus = o.get("music")
     mp = (Path(mus) if Path(mus).is_absolute() else MUSIC_DIR / mus) if mus else None

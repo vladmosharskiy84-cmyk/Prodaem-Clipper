@@ -1,7 +1,7 @@
 {
-  "version": "2026.11.15 19:44",
-  "time": 1794764666.6430357,
-  "notes": "Программа сообщает админу о сбоях (нет денег на Claude, мало места) и показывает, что она делает — чтобы быстро помогать",
+  "version": "2026.11.15 19:59",
+  "time": 1794765544.1293411,
+  "notes": "Истории больше не начинаются и не обрываются на полуслове",
   "files": {
     "montage.py": "5ca563429f3106b5eb99ccca53b551d8b8154951338b1ee854d915f85f95d8ca",
     "review.py": "d467c90b91e88e43df7b517245648bc91dcc1ecbecfbaf131a32eea3bb235e21",
@@ -17,7 +17,7 @@
     "agents.py": "08803606e98c469d892fcde27d0a095b57f5753ccd4c426ba7cb1afaf53a44d3",
     "leaders.py": "06951d301f174cb68aed842807048974977038e49ae9439738ac155ab69a7dc1",
     "tgbot.py": "47b81efff03c52593fdf1a4f16058ed3f3be3d021a5cf60ff472b318b7db40bd",
-    "blogger.py": "9b83876aaea48d9c58e17e334831672fa3ee5c7293752b3af3b6d27d56e0ecfc",
+    "blogger.py": "5ad27ec19379c9e327aeacb16564a2451f536e3d259f94ed4fa5a6fe042639d5",
     "reaction.py": "6080db0aad9baaee2c5a5c9d5485976f34a039b266297b22a4181b9da6152dab",
     "ms_frame.jpg": "8feed06044da01bbf185516de08c2ee2d622d6565eb5c93c76ba8f5fe3b77230",
     "report.py": "f4efa4e60ce3cc2cf6ac454c11d76a4384969c62f4180672854ddc0c758087de"
