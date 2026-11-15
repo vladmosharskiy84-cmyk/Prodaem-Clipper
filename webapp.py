@@ -602,7 +602,14 @@ def blog_req(d):
         threading.Thread(target=lambda: (blogger.hook_font(), blogger.sub_font()), daemon=True).start()
         return {"music": blogger.music_list(), "sounds": blogger.sound_list(), "saved": saved, "hook_font": hf[0],
                 "corsiva": hf[0].lower().startswith("monotype"), "sub_font": blogger.sub_font(download=False)[0],
-                "hook_fonts": blogger.user_hook_fonts()}
+                "hook_fonts": blogger.user_hook_fonts(),
+                "mstyles": blogger.mstyles_public()}
+    if act == "style_frame":                     # постоянный кадр Вальдемара для окна стилей (лежит рядом с программой)
+        import base64
+        f = CODE / "ms_frame.jpg"
+        if not f.exists():
+            return {}
+        return {"img": "data:image/jpeg;base64," + base64.b64encode(f.read_bytes()).decode(), "w": 960, "h": 540, "box": None}
     if act == "add_font":
         name, cyr = blogger.add_hook_font(ask_files("font"))
         return {"fonts": blogger.user_hook_fonts(), "added": name, "cyr": cyr}
@@ -640,7 +647,7 @@ def blog_req(d):
             d["tg"] = False
         opts = {k: d[k] for k in ("music", "music_db", "hook_words", "hook_font", "hook_text", "hook_caps", "hook_case",
                                   "hook_palette", "cut_fillers", "story_len", "stories", "click", "click_vol", "bw", "cut_pauses", "tg",
-                                  "max_gap") if k in d}
+                                  "max_gap", "mstyle") if k in d}
         BLOG_CFG.write_text(json.dumps(opts, ensure_ascii=False), encoding="utf-8")
         n_long = 0
         for f in files:
@@ -677,9 +684,10 @@ def blog_req(d):
         if A.cfg.get("no_tg"):
             d["tg"] = False
         opts = {k: d[k] for k in ("music", "music_db", "hook_words", "hook_font", "hook_text", "hook_case", "hook_palette",
-                                  "cut_fillers", "click", "click_vol", "bw", "cut_pauses", "tg", "max_gap") if k in d}
+                                  "cut_fillers", "click", "click_vol", "bw", "cut_pauses", "tg", "max_gap", "mstyle") if k in d}
         BLOG_CFG.write_text(json.dumps(dict(saved, **{k: v for k, v in opts.items() if k != "hook_text"}), ensure_ascii=False),
                             encoding="utf-8")
+        opts["story_title"] = p.get("title", "")         # тема истории — для стилей с заголовком сверху
         jid = secrets.token_hex(4)
         with A.lock:
             A.job_list.append({"id": jid, "streamer": "Мурчик", "title": p.get("title", ""), "fmt": p.get("title", "")[:40],

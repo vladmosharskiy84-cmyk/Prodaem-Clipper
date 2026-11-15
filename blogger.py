@@ -37,7 +37,79 @@ RED, YELLOW, WHITE = "&H2828FF&", "&H00DCFF&", "&HFFFFFF&"   # ASS: BGR, ярк�
 SUB_RED = "&H1F1FE8&"
 
 DEFAULTS = {"hook_font": None, "hook_text": "", "hook_caps": False, "hook_words": 0, "click": "mouse", "click_vol": 70, "bw": True, "cut_pauses": True, "max_gap": 0.22, "cut_fillers": True,
-            "music": None, "music_db": -20, "zoom_cuts": True, "accents": True, "tg": True}
+            "music": None, "music_db": -20, "zoom_cuts": True, "accents": True, "tg": True, "mstyle": "mine"}
+
+# ---------- пул стилей монтажа ----------
+# Собран по роликам ниши (Вальдемар и его нарезчики): окно на чёрном, широкий «кинокадр», весь экран;
+# тёплый/холодный/ч/б цвет; субтитры по слову или фразой с жёлтым словом; крупная красная фраза поверх головы;
+# ч/б первая секунда с жёлтым заголовком или тема сверху. Паузы вырезаны всегда, крупность скачет на стыках.
+FRAMES = {"card34": (930, 1240, 46), "card45": (960, 1200, 54), "cinema": (1080, 608, 0), "full": (1080, 1920, 0)}
+GRADES = {
+    "bw": "hue=s=0,eq=contrast=1.14:brightness=0.01:gamma=0.96,colorbalance=rm=0.03:gm=0.015:bm=-0.03:rh=0.02:bh=-0.02,"
+          "vignette=angle=PI/5:mode=forward,",
+    "warm": "eq=contrast=1.08:saturation=1.28:gamma=0.97,colorbalance=rs=0.06:gs=0.02:bs=-0.07:rm=0.04:bm=-0.05,",
+    "cold": "eq=contrast=1.12:saturation=0.5:gamma=0.95,colorbalance=rs=-0.03:bs=0.05:rm=-0.02:bm=0.04,"
+            "vignette=angle=PI/5:mode=forward,",
+    "natural": "eq=contrast=1.05:saturation=1.08,",
+    "punch": "eq=contrast=1.13:saturation=1.2:gamma=0.98,",
+}
+# intro: stair — главные слова лесенкой; bw_title — первая секунда ч/б и жёлтый заголовок; top_title — тема сверху; none
+# subs: word_chest — слово на груди (красные смысловые); word_bottom — слово внизу окна, толстая обводка;
+#       word_red — каждое слово красным со свечением; phrase — 2–3 слова КАПСОМ, смысловое жёлтым
+# acc: inline — смысловое слово красным в строке; big_top — смысловое слово огромным красным поверх головы
+MSTYLES = {
+    "valdemar": {"name": "Вальдемар", "frame": "card34", "grade": "bw", "intro": "stair", "subs": "word_chest", "acc": "inline", "zoom": 1.08},
+    "okno": {"name": "Окно", "frame": "card45", "grade": "warm", "intro": "none", "subs": "word_bottom", "acc": "big_top", "zoom": 1.12},
+    "kino": {"name": "Кино", "frame": "cinema", "grade": "cold", "intro": "none", "subs": "word_red", "acc": "inline", "zoom": 1.06},
+    "dvizh": {"name": "Движ", "frame": "full", "grade": "punch", "intro": "bw_title", "subs": "phrase", "acc": "inline", "zoom": 1.15},
+    "tema": {"name": "Тема сверху", "frame": "full", "grade": "natural", "intro": "top_title", "subs": "phrase", "acc": "inline", "zoom": 1.1},
+    "noir": {"name": "Нуар", "frame": "card45", "grade": "bw", "intro": "top_title", "subs": "word_red", "acc": "inline", "zoom": 1.1},
+    "teplo": {"name": "Тёплая карточка", "frame": "card34", "grade": "warm", "intro": "stair", "subs": "word_chest", "acc": "big_top", "zoom": 1.1},
+    "ulica": {"name": "Улица", "frame": "full", "grade": "warm", "intro": "none", "subs": "word_bottom", "acc": "big_top", "zoom": 1.12},
+    "holod": {"name": "Холодное окно", "frame": "card45", "grade": "cold", "intro": "bw_title", "subs": "phrase", "acc": "inline", "zoom": 1.08},
+    "shirokiy": {"name": "Широкий тёплый", "frame": "cinema", "grade": "warm", "intro": "top_title", "subs": "word_chest", "acc": "inline", "zoom": 1.08},
+}
+
+
+def mstyles_public():
+    """Готовые стили для окна выбора: всё, чтобы нарисовать мини-телефон на CSS (размеры в пикселях ролика 1080×1920)."""
+    keys = ("key", "name", "frame", "grade", "intro", "subs", "acc", "fw", "fh", "fr", "fx", "fy", "sub_y", "top_y", "title_y")
+    return [{k: v for k, v in resolve_style({"mstyle": key}, "preview").items() if k in keys} for key in MSTYLES]
+
+
+def resolve_style(o, src):
+    """Стиль монтажа для этого видео. «mine» (по умолчанию): свой набор кадр/цвет/начало/субтитры на каждом ПК
+    и для каждого видео — у друзей, которые режут те же видео, ролики выходят разными."""
+    import hashlib
+    key = o.get("mstyle") or "mine"
+    h = int(hashlib.md5((m.machine_salt() + "ms" + Path(src).stem).encode("utf-8")).hexdigest(), 16)
+    if key in MSTYLES:
+        st = dict(MSTYLES[key], key=key)
+    else:
+        def pick(seq):
+            nonlocal h
+            v = seq[h % len(seq)]
+            h //= len(seq)
+            return v
+        st = {"key": "mine", "frame": pick(list(FRAMES)), "grade": pick(list(GRADES)),
+              "intro": pick(["stair", "none", "bw_title", "top_title"]),
+              "subs": pick(["word_chest", "word_bottom", "word_red", "phrase"]), "acc": pick(["inline", "big_top"]),
+              "zoom": pick([1.06, 1.08, 1.1, 1.12, 1.15])}
+        if st["intro"] == "bw_title" and st["grade"] == "bw":
+            st["intro"] = "top_title"            # ч/б начало на ч/б ролике не видно
+        if st["acc"] == "big_top" and st["subs"] == "phrase":
+            st["acc"] = "inline"
+        st["name"] = "свой: " + "/".join(st[k] for k in ("frame", "grade", "intro", "subs"))
+    st["zgap"] = 1.3 + (h % 8) * 0.1             # как часто скачет крупность: свой ритм у каждого ПК
+    fw, fh, fr = FRAMES[st["frame"]]
+    st.update(fw=fw, fh=fh, fr=fr, fx=(W - fw) // 2, fy=(H - fh) // 2)
+    full = st["frame"] == "full"
+    st["sub_y"] = int(H * 0.62) if full else int(st["fy"] + fh * (0.72 if st["frame"] == "cinema" else 0.685))
+    if st["subs"] == "word_bottom":
+        st["sub_y"] = 1450 if full else st["fy"] + fh - 95
+    st["top_y"] = 430 if full else int(st["fy"] + fh * 0.2)       # огромное красное слово поверх головы
+    st["title_y"] = 300 if full else max(150, st["fy"] - 150)       # заголовок: над окном или сверху экрана
+    return st
 
 HOOK_FONTS = ["Playfair Display Italic", "Monotype Corsiva", "Marck Script", "Lora Bold Italic"]
 SUB_FONTS = ["Inter SemiBold", "Montserrat Bold"]
@@ -542,7 +614,7 @@ def pick_stories(words, n, length, cfg, say=print):
         r = requests.post("https://api.anthropic.com/v1/messages",
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
                           json={"model": cfg.get("story_model") or cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 10000,
-                                "messages": [{"role": "user", "content": STORY_PROMPT.format(n=n, a=a, b=b, text=chunk)}]},
+                                "messages": [{"role": "user", "content": STORY_PROMPT.format(n=min(20, n * 2), a=a, b=b, text=chunk)}]},
                           timeout=240)
         if r.status_code != 200:
             raise Stop(f"Claude ответил {r.status_code}: {r.text[:200]}")
@@ -552,8 +624,18 @@ def pick_stories(words, n, length, cfg, say=print):
             stories += got
         else:
             say("Claude ответил не по формату на часть видео, пропускаю её: " + out[:120].replace("\n", " "))
+    # Кандидатов вдвое больше, чем нужно. Каждый ПК берёт свою подборку: к оценке добавляется своя «случайность»
+    # до 2.5 балла, поэтому друзья, режущие одно видео, чаще берут разные истории (самые сильные всё равно в почёте).
+    import hashlib
+
+    def rank(x):
+        try:
+            j = int(hashlib.md5((m.machine_salt() + "story" + str(int(float(x.get("start") or 0)))).encode()).hexdigest(), 16)
+        except Exception:
+            j = 0
+        return -(float(x.get("score") or 0) + (j % 250) / 100)
     ok = []
-    for st in sorted(stories, key=lambda x: -float(x.get("score") or 0)):
+    for st in sorted(stories, key=rank):
         try:
             s0, e0 = float(st["start"]), float(st["end"])
         except Exception:
@@ -662,7 +744,8 @@ def long_make(src, cfg, enc, opts=None, n=5, say=print, should_stop=None, on_rea
         real = m.probe(piece)["dur"]
         pw = [dict(w, s=round(w["s"] - a, 3), e=round(w["e"] - a, 3)) for w in words if a - 0.1 <= w["s"] and w["e"] <= a + real + 0.1]
         piece.with_suffix(".verb.json").write_text(json.dumps(pw, ensure_ascii=False), encoding="utf-8")
-        one = dict(o, hook_text=" ".join(st["words"]) if (o.get("auto_words", True) and st["words"]) else o.get("hook_text", ""))
+        one = dict(o, hook_text=" ".join(st["words"]) if (o.get("auto_words", True) and st["words"]) else o.get("hook_text", ""),
+                   story_title=st["title"])
         out, meta = make_checked(piece, cfg, enc, one, say=lambda t, i=i: say(f"история {i + 1} из {len(stories)}: {t}"))
         meta.update(title=st["title"], why=st["why"], story_at=round(a, 1), source=info.get("url") or info.get("path"))
         outs.append((out, meta))
@@ -684,8 +767,10 @@ def _clean(t):
     return re.sub(r"^[«»\"'(\[]+|[.,!?;:…»\"')\]]+$", "", t).strip() or t.strip()
 
 
-def write_ass(path, hook, hook_end, rest, accents, hook_face, subf, palette="red_white"):
-    """hook: [{"t", "s"}] — главные слова и момент появления; rest: обычные субтитры (идут после крючка)."""
+def write_ass(path, hook, hook_end, rest, accents, hook_face, subf, palette="red_white", st=None, title="", total=0.0):
+    """hook: [{"t", "s"}] — главные слова и момент появления; rest: обычные субтитры (идут после крючка).
+    st: стиль монтажа (resolve_style), title: заголовок для начала «ч/б + заголовок» или «тема сверху»."""
+    st = st or resolve_style({"mstyle": "valdemar"}, "x")
     hname, hpath, hbold, hital = hook_face
     sname, spath, sbold, _ = subf
     head = f"""[Script Info]
@@ -699,6 +784,7 @@ ScaledBorderAndShadow: yes
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Hook,{hname},{HOOK_SIZE},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,{-1 if hbold else 0},{-1 if hital else 0},0,0,100,100,0,0,1,0,0,8,0,0,0,204
 Style: Sub,{sname},{SUB_SIZE},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,{-1 if sbold else 0},0,0,0,100,100,0,0,1,0,0,5,0,0,0,204
+Style: Title,{sname},64,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,8,60,60,0,204
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -707,7 +793,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     if hook:
         lines = hook_lines(hook)
         cols = {"red_white": [RED, WHITE], "red": [RED], "red_yellow": [RED, YELLOW, YELLOW, RED]}.get(palette, [RED, WHITE])
-        left, right = CARD_X + 30, CARD_X + CARD_W - 30
+        left, right = st["fx"] + 30, st["fx"] + st["fw"] - 30
         n = len(lines)
         top = HOOK_Y - HOOK_GAP * n / 2
         t0 = hook[0]["s"]
@@ -738,22 +824,88 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # слой 0: густая тёмная дымка под словом (читается на любом фоне), слой 1: само слово, яркое, с тёмной кромкой
             ev.append(f"Dialogue: 0,{_t(t0)},{_t(hook_end)},Hook,,0,0,0,,{{{base}\\1a&HFF&\\bord34\\blur30\\3c&H000000&}}{body('&H0C&')}")
             ev.append(f"Dialogue: 1,{_t(t0)},{_t(hook_end)},Hook,,0,0,0,,{{{base}\\1c{col}\\bord2\\blur0.8\\3c{dark}}}{body(None)}")
+    if title and st["intro"] in ("bw_title", "top_title"):
+        ev += title_events(title, st, total)
+    if st["subs"] == "phrase":
+        ev += phrase_events(rest, accents, st)
+        Path(path).write_text(head + "\n".join(ev) + "\n", encoding="utf-8")
+        return
+    sy = st["sub_y"]
     for i, w in enumerate(rest):                     # дальше по одному слову
-        st = w["s"]
+        s0 = w["s"]
         nxt = rest[i + 1]["s"] if i + 1 < len(rest) else w["e"] + 0.5
-        en = min(nxt, max(w["e"], st + 0.25) + 0.3) if nxt - w["e"] > 0.6 else nxt
-        en = max(en, st + 0.12)
+        en = min(nxt, max(w["e"], s0 + 0.25) + 0.3) if nxt - w["e"] > 0.6 else nxt
+        en = max(en, s0 + 0.12)
         acc = i in accents
-        col = SUB_RED if acc else WHITE
-        sc = 110 if acc else 100
         word = _clean(w["t"])
         prev = str(rest[i - 1]["t"]).strip() if i else "."
         # Whisper пишет с большой буквы начало фразы («Подиви», «Девочек») — на экране это выглядит случайно
         if prev[-1:] and prev[-1:] in ".!?…" and len(word) > 1 and word[0].isupper() and word[1:].islower():
             word = word[0].lower() + word[1:]
-        ev.append(f"Dialogue: 0,{_t(st)},{_t(en)},Sub,,0,0,0,,{{\\an5\\pos({W // 2},{SUB_Y})\\bord6\\blur9\\3c&H000000&"
-                  f"\\3a&H40&\\1c{col}\\fscx{sc - 7}\\fscy{sc - 7}\\t(0,80,\\fscx{sc}\\fscy{sc})}}{word}")
+        if acc and st["acc"] == "big_top":           # смысловое слово — огромным красным поверх головы
+            size = min(150, int(150 * 9 / max(9, len(word))))
+            base = f"\\an5\\pos({W // 2},{st['top_y']})\\fs{size}\\fscx86\\fscy86\\t(0,90,\\fscx100\\fscy100)"
+            ev.append(f"Dialogue: 0,{_t(s0)},{_t(en)},Sub,,0,0,0,,{{{base}\\1a&HFF&\\bord30\\blur26\\3c&H000000&\\3a&H18&}}{word}")
+            ev.append(f"Dialogue: 1,{_t(s0)},{_t(en)},Sub,,0,0,0,,{{{base}\\1c{RED}\\bord2\\blur0.8\\3c&H000046&}}{word}")
+            continue
+        if st["subs"] == "word_red":                 # каждое слово красным со свечением, смысловое — белым и крупнее
+            col, sc = (WHITE, 112) if acc else (SUB_RED, 100)
+            look = "\\bord5\\blur7\\3c&H000000&\\3a&H20&"
+        elif st["subs"] == "word_bottom":            # белое слово с толстой чёткой обводкой внизу окна
+            col, sc = (SUB_RED, 108) if acc else (WHITE, 100)
+            look = "\\bord7\\blur1\\3c&H000000&"
+        else:
+            col, sc = (SUB_RED, 110) if acc else (WHITE, 100)
+            look = "\\bord6\\blur9\\3c&H000000&\\3a&H40&"
+        ev.append(f"Dialogue: 0,{_t(s0)},{_t(en)},Sub,,0,0,0,,{{\\an5\\pos({W // 2},{sy}){look}"
+                  f"\\1c{col}\\fscx{sc - 7}\\fscy{sc - 7}\\t(0,80,\\fscx{sc}\\fscy{sc})}}{word}")
     Path(path).write_text(head + "\n".join(ev) + "\n", encoding="utf-8")
+
+
+def title_events(title, st, total):
+    """Заголовок в начале: «ч/б + заголовок» — жёлтый КАПСОМ в две строки на ~2 с; «тема сверху» — белый на ~4.5 с."""
+    words = [x for x in re.split(r"\s+", title.strip()) if x][:9]
+    if not words:
+        return []
+    yellow = st["intro"] == "bw_title"
+    if yellow:
+        words = [x.upper() for x in words]
+    half = (len(words) + 1) // 2 if len(words) > 3 else len(words)
+    text = " ".join(words[:half]) + (r"\N" + " ".join(words[half:]) if words[half:] else "")
+    longest = max(len(" ".join(words[:half])), len(" ".join(words[half:])), 1)
+    base = 78 if yellow else 60
+    size = base if longest <= 20 else max(44, int(base * 20 / longest))
+    end = min(total or 9, 2.2 if yellow else 4.5)
+    col = YELLOW if yellow else WHITE
+    return [f"Dialogue: 2,{_t(0)},{_t(end)},Title,,0,0,0,,{{\\an8\\pos({W // 2},{st['title_y']})\\fs{size}\\1c{col}"
+            f"\\bord4\\3c&H000000&\\shad2\\4c&H000000&\\fad(0,200)}}{text}"]
+
+
+def phrase_events(rest, accents, st):
+    """Фраза по 2–3 слова КАПСОМ, смысловое слово жёлтым; фраза висит, пока говорят её слова."""
+    chunks, cur = [], []
+    for i, w in enumerate(rest):
+        gap = (w["s"] - rest[i - 1]["e"]) if i else 0.0
+        if cur and (len(cur) >= 3 or gap > 0.35 or sum(len(_clean(rest[j]["t"])) for j in cur) + len(_clean(w["t"])) > 16):
+            chunks.append(cur)
+            cur = []
+        cur.append(i)
+        if str(w["t"]).strip()[-1:] in ".!?…":
+            chunks.append(cur)
+            cur = []
+    if cur:
+        chunks.append(cur)
+    ev = []
+    for k, ch in enumerate(chunks):
+        s0 = rest[ch[0]]["s"]
+        nxt = rest[chunks[k + 1][0]]["s"] if k + 1 < len(chunks) else rest[ch[-1]]["e"] + 0.4
+        en = nxt if nxt - rest[ch[-1]]["e"] < 0.6 else rest[ch[-1]]["e"] + 0.3
+        parts = [("{\\1c" + (YELLOW if j in accents else WHITE) + "}") + _clean(rest[j]["t"]).upper() for j in ch]
+        chars = sum(len(_clean(rest[j]["t"])) for j in ch) + len(ch)
+        size = 74 if chars <= 14 else max(50, int(74 * 14 / chars))
+        ev.append(f"Dialogue: 0,{_t(s0)},{_t(max(en, s0 + 0.2))},Sub,,0,0,0,,{{\\an5\\pos({W // 2},{st['sub_y']})\\fs{size}"
+                  f"\\bord4\\blur0.6\\3c&H000000&\\shad2\\4c&H000000&\\fscx94\\fscy94\\t(0,80,\\fscx100\\fscy100)}}" + " ".join(parts))
+    return ev
 
 
 # ---------- монтаж ----------
@@ -776,10 +928,10 @@ def black_bars(src, dur):
     return w, h, x, y
 
 
-def card_crop(sw, sh, zoom=1.0, box=None):
-    """Кусок исходника 3:4 для карточки: по ширине целиком, по высоте с запасом над головой."""
+def card_crop(sw, sh, zoom=1.0, box=None, fw=CARD_W, fh=CARD_H):
+    """Кусок исходника под окно fw×fh: по ширине целиком, по высоте с запасом над головой."""
     bw, bh, bx, by = box or (sw, sh, 0, 0)
-    ratio = CARD_W / CARD_H
+    ratio = fw / fh
     if bw / bh > ratio:
         ch = bh / zoom
         cw = ch * ratio
@@ -799,6 +951,8 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
     if not info.get("dur"):
         raise Stop("не получилось открыть видео")
     sw, sh, dur = info["w"], info["h"], info["dur"]
+    st = resolve_style(o, src)
+    say(f"стиль монтажа: {st['name']}")
     say("распознаю речь…")
     words = m.merge_hyphens(transcribe_verbatim(src, cfg) if o.get("cut_fillers", True) else m.transcribe(src, cfg))
     src_words = list(words)
@@ -844,6 +998,11 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
                 t = max(t + 0.35, starts[i] if i < len(starts) else t + 0.5)
             hook.append({"t": x, "s": round(t, 3)})
         hook_end = min(total, max(hook[-1]["s"] + 0.65, hook[0]["s"] + 2.2))   # как в примере: ~2 с на экране
+    title = ""
+    if st["intro"] != "stair":                   # вместо лесенки — заголовок (тема истории или главные слова)
+        title = (re.sub(r"^\[[^\]]*\]\s*", "", str(o.get("story_title") or "")) if st["intro"] == "top_title" else "") \
+            or " ".join(texts)
+        hook, hook_end = [], 0.0
     rest = [w for w in tw if w["s"] >= hook_end - 0.05]     # пока висят главные слова, обычных субтитров нет
     acc_all = ai_accents(tw, cfg) if o["accents"] else set()
     first = len(tw) - len(rest)
@@ -853,35 +1012,43 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
     ass = m.CACHE / f"blog_{tag}.ass"
     hf = hook_font(custom=o.get("hook_font"))
     say(f"шрифт крючка: {hf[0]}")
-    write_ass(ass, hook, hook_end, rest, acc, hf, sub_font(), o.get("hook_palette") or "red_white")
-    mask = m.CACHE / f"blog_mask_{CARD_W}x{CARD_H}.png"
+    write_ass(ass, hook, hook_end, rest, acc, hf, sub_font(), o.get("hook_palette") or "red_white", st=st, title=title,
+              total=total)
+    fw, fh, fr = st["fw"], st["fh"], max(2, st["fr"])
+    mask = m.CACHE / f"blog_mask_{fw}x{fh}_{fr}.png"
     if not mask.exists():
-        m.rounded_mask(CARD_W, CARD_H, CARD_R, mask)
+        m.rounded_mask(fw, fh, fr, mask)
 
     fps = 60 if info.get("fps", 30) > 45 else 30
-    grade = ("hue=s=0,eq=contrast=1.14:brightness=0.01:gamma=0.96,colorbalance=rm=0.03:gm=0.015:bm=-0.03:rh=0.02:bh=-0.02,"
-             "vignette=angle=PI/5:mode=forward," if o["bw"] else "eq=contrast=1.05:saturation=1.05,")
+    grade = GRADES[st["grade"]] if (o["bw"] or st["key"] != "valdemar") else GRADES["natural"]
+    if st["intro"] == "bw_title":                # первая секунда ч/б под жёлтым заголовком, дальше цвет
+        grade += "hue=s=0:enable='lt(t,1.4)',"
     fc, vlab, alab = [], [], []
-    zs, last_z = [], 1.08
+    zs, last_z = [], st["zoom"]
     since = 99.0
-    for a, b in segs:                                # крупность меняем на стыке, но не чаще раза в 1.5 с
-        if o["zoom_cuts"] and since >= 1.5:
-            last_z = 1.08 if last_z == 1.0 else 1.0
+    for a, b in segs:                                # крупность меняем на стыке, но не чаще раза в zgap секунд
+        if o["zoom_cuts"] and since >= st["zgap"]:
+            last_z = st["zoom"] if last_z == 1.0 else 1.0
             since = 0.0
         zs.append(last_z)
         since += b - a
     for i, (a, b) in enumerate(segs):                # каждый кусок: своя крупность плана (лёгкий «зум на стыке»)
         z = zs[i]
-        cw, ch, cx, cy = card_crop(sw, sh, z, box)
+        # широкий кадр из горизонтального исходника: подходим ближе, чтобы человек не терялся в полосе
+        bz = 1.9 if st["frame"] == "cinema" and sw / max(1, sh) > 1.2 else 1.0
+        cw, ch, cx, cy = card_crop(sw, sh, z * bz, box, fw, fh)
         fc.append(f"[0:v]trim={a:.3f}:{b:.3f},setpts=PTS-STARTPTS,crop={cw}:{ch}:{cx}:{cy},"
-                  f"scale={CARD_W}:{CARD_H}:flags=lanczos,fps={fps},setsar=1[v{i}]")
+                  f"scale={fw}:{fh}:flags=lanczos,fps={fps},setsar=1[v{i}]")
         fc.append(f"[0:a]atrim={a:.3f}:{b:.3f},asetpts=PTS-STARTPTS,afade=t=in:d=0.012,"
                   f"afade=t=out:st={max(0, b - a - 0.015):.3f}:d=0.015[a{i}]")
         vlab.append(f"[v{i}]")
         alab.append(f"[a{i}]")
     fc.append("".join(f"{v}{a_}" for v, a_ in zip(vlab, alab)) + f"concat=n={len(segs)}:v=1:a=1[cv][voice0]")
-    fc.append(f"[cv]{grade}cas=0.4,format=rgba[cv2];[1:v]format=gray[mk];[cv2][mk]alphamerge[card]")
-    fc.append(f"color=c=black:s={W}x{H}:r={fps}:d={total:.3f}[bg];[bg][card]overlay={CARD_X}:{CARD_Y}:shortest=1,"
+    if st["fr"]:                                     # скруглённое окно
+        fc.append(f"[cv]{grade}cas=0.4,format=rgba[cv2];[1:v]format=gray[mk];[cv2][mk]alphamerge[card]")
+    else:                                            # кинокадр или весь экран: прямые края
+        fc.append(f"[cv]{grade}cas=0.4[card]")
+    fc.append(f"color=c=black:s={W}x{H}:r={fps}:d={total:.3f}[bg];[bg][card]overlay={st['fx']}:{st['fy']}:shortest=1,"
               f"ass={ass.name}:fontsdir=../fonts,format=yuv420p[vout]")
     # звук: голос ровнее; щелчки под словами крючка; музыка тише голоса и прячется, когда он говорит
     mus = o.get("music")
@@ -930,7 +1097,7 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
                        creationflags=NOWIN)
     if r.returncode != 0 or not out.exists():
         raise Stop("ffmpeg: " + ((r.stderr or "").strip().splitlines() or ["?"])[-1][:300])
-    meta = {"src": str(src), "out": str(out), "duration": round(total, 2),
+    meta = {"src": str(src), "out": str(out), "duration": round(total, 2), "style": st["name"],
             "hook": " ".join(w["t"] for w in hook), "words": len(tw), "music": str(mp) if mp else None,
             "text": " ".join(w["t"] for w in tw)[:2000], "src_dur": round(dur, 2),
             "src_words": [{"t": w["t"], "s": w["s"], "e": w["e"]} for w in src_words]}

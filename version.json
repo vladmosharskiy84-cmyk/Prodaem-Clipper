@@ -1,23 +1,24 @@
 {
-  "version": "2026.11.15 14:01",
-  "time": 1794744118.7710881,
-  "notes": "Поиск клипов больше не падает (ошибка JSONDecodeError); субтитры «Свой у каждого» — у друзей один клип выходит по-разному; убраны чат стрима и эмоуты",
+  "version": "2026.11.15 14:33",
+  "time": 1794745992.166628,
+  "notes": "Мурчик: 10 стилей монтажа по роликам ниши и «Свой у каждого» — окно выбора с настоящим кадром; разные ПК берут разные истории из одного видео",
   "files": {
     "montage.py": "3b01897d20cf2882939cadb4eacefdceec3aa00e6ddc632a0245be1e3e9ca39a",
     "review.py": "d467c90b91e88e43df7b517245648bc91dcc1ecbecfbaf131a32eea3bb235e21",
     "top5.py": "d70f586b96f327d8cbcc08d8959d494cf5cc450138498038d33afc8e9460cc67",
     "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
     "clipfinder.py": "cfc0f40ec627eb3086312eb62b499e6382b78c8068702bd18dca40ed5d150645",
-    "updater.py": "87389cfedf3f4e3f337c05ff508f807222fd3b6fa0cb8c040fd6ccc2975e6021",
-    "webapp.py": "f17ce06ab5aab5441d2196714c20defda308269160cb1eabd07011563f5a889d",
-    "ui.html": "dff3255350cd8c4c9769f5badc2b19a6909a63616e6b2884063e7ca6478a6aed",
+    "updater.py": "07f50166fe1a653e6394fca1517e2363adf898232340cc0f23d1fcbf895d7478",
+    "webapp.py": "fafaa594bdb9b1687cce96aed6a02b5d53da878e6b4c64a90a9426142a050147",
+    "ui.html": "1a4686bb61eb9dbd9d63983ea37b6d4421577ae072a0e1b77d8cf644333408d7",
     "logo_src.png": "e43b51bb73da86652be2c2adac971e5b39557d895d84a4c2449e9b99f95c1739",
     "highlights.py": "1e9b6942cfbc2de55466c191e0d50fe8db23d159e5ae78d98fcb826623e5091d",
     "accounts.py": "2e6681ac80f17dfcdb5983d0bc62011f27b2b2003bf6d5ad4117e5d68dc0f80c",
     "agents.py": "08803606e98c469d892fcde27d0a095b57f5753ccd4c426ba7cb1afaf53a44d3",
     "leaders.py": "06951d301f174cb68aed842807048974977038e49ae9439738ac155ab69a7dc1",
     "tgbot.py": "47b81efff03c52593fdf1a4f16058ed3f3be3d021a5cf60ff472b318b7db40bd",
-    "blogger.py": "0a714d1dff46b2deb9b5d7ed7f085e4537038037dd76a49c41f8b59af5ddeac0",
-    "reaction.py": "6080db0aad9baaee2c5a5c9d5485976f34a039b266297b22a4181b9da6152dab"
+    "blogger.py": "a82eaf69094165c78b43dabbea5a0ec177cbf837dd382c2b20821408c8e16dbd",
+    "reaction.py": "6080db0aad9baaee2c5a5c9d5485976f34a039b266297b22a4181b9da6152dab",
+    "ms_frame.jpg": "8feed06044da01bbf185516de08c2ee2d622d6565eb5c93c76ba8f5fe3b77230"
   }
 }

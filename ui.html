@@ -259,6 +259,36 @@ input[type=range]{flex:1;accent-color:var(--a1);min-width:140px}
 .lk-txt span.hl{color:var(--hc);background:var(--hb,var(--b,transparent));transform:scale(1.08)}
 .lk-txt.one span{display:none}.lk-txt.one span.hl{display:inline-block}
 .lib-card b{font-weight:700;font-size:13px;padding:0 2px}.lib-card small{color:var(--mut);font-size:11px;padding:0 2px;margin-top:-5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ms-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+.ms-ph{position:relative;aspect-ratio:9/16;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:#050507;transition:transform .3s var(--ease),border-color .25s,box-shadow .25s;container-type:inline-size}
+.lib-card:hover .ms-ph{transform:translateY(-3px);border-color:color-mix(in srgb,var(--a2) 50%,var(--line))}
+.lib-card.on .ms-ph{border-color:transparent;box-shadow:0 0 0 2px var(--a1),0 14px 30px -14px var(--a1)}
+.lib-card.cur .ms-ph::after{content:"сейчас";position:absolute;left:8px;top:8px;font:700 9.5px var(--body);letter-spacing:.06em;text-transform:uppercase;color:#fff;background:rgba(0,0,0,.6);padding:3px 7px;border-radius:6px;z-index:5}
+.ms-fr{position:absolute;overflow:hidden}
+.ms-scene{position:absolute;inset:0;background:linear-gradient(180deg,#8fb0c8 0 30%,#5f7f4e 30% 46%,#a9b2b6 46% 78%,#6a7f45 78%)}
+.ms-man{position:absolute;left:50%;bottom:0;width:62%;aspect-ratio:.82;transform:translateX(-50%)}
+.ms-man::before{content:"";position:absolute;left:50%;top:0;width:36%;aspect-ratio:.86;border-radius:46%;transform:translateX(-50%);z-index:1;background:radial-gradient(circle at 45% 40%,#f1c9a7,#c98f6d)}
+.ms-man::after{content:"";position:absolute;left:0;right:0;top:31%;bottom:0;border-radius:46% 46% 0 0;background:linear-gradient(180deg,#f2f2f2,#d6d6d6)}
+.ms-man.cinema{width:30%}.ms-man.full{width:74%}
+.ms-ph.intro .ms-sub,.ms-ph.intro .ms-big{visibility:hidden}.ms-ph:not(.intro) .ms-stair,.ms-ph:not(.intro) .ms-title{opacity:0;transition:opacity .2s}
+.ms-ph:not(.intro) .ms-fr .ms-scene.bwi{filter:inherit}
+.ms-bwnote{position:absolute;right:5px;bottom:5px;font:700 8px var(--body);font-style:normal;color:#fff;background:rgba(0,0,0,.55);padding:2px 5px;border-radius:4px}
+.ms-stair{position:absolute;left:10%;right:10%;transform:translateY(-50%);display:flex;flex-direction:column;font:italic 600 12cqw 'Marck Script',Georgia,serif;line-height:1.05}
+.ms-stair i{font-style:inherit;color:#ff2a2a;text-shadow:0 0 8px #000,0 0 3px #000}.ms-stair i:nth-child(2){align-self:center;color:#fff}.ms-stair i:nth-child(3){align-self:flex-end}
+.ms-title{position:absolute;left:6%;right:6%;text-align:center;font:800 5.6cqw var(--body);color:#fff;text-shadow:0 0 3px #000,0 1px 2px #000;line-height:1.15}
+.ms-title.y{color:#ffdc00;font-size:7cqw}
+.ms-sub{position:absolute;left:4%;right:4%;transform:translateY(-50%);text-align:center;font:800 8.5cqw var(--body);white-space:nowrap}
+.ms-sub span{display:none;color:#fff;paint-order:stroke fill}
+.ms-sub[data-mode="word"] span.on{display:inline}
+.ms-sub[data-mode="phrase"] span.on{display:inline}
+.ms-sub.word_chest span{text-shadow:0 0 6px #000,0 0 2px #000}
+.ms-sub.word_bottom span{-webkit-text-stroke:1.6px #000}
+.ms-sub.word_red span{color:#ff2b2b;text-shadow:0 0 6px #000,0 0 2px #000}
+.ms-sub.phrase{font-size:6.6cqw}.ms-sub.phrase span{-webkit-text-stroke:1px #000}
+.ms-sub span:last-child{color:#ff2b2b}.ms-sub.word_red span:last-child{color:#fff}.ms-sub.phrase span:last-child{color:#ffdc00}
+.ms-sub.acc-big_top span:last-child.on{visibility:hidden}
+.ms-big{position:absolute;left:0;right:0;transform:translateY(-50%) scale(.8);text-align:center;font:900 19cqw var(--body);color:#ff2424;text-shadow:0 0 10px #000,0 0 22px #000;opacity:0;transition:opacity .15s,transform .15s}
+.ms-big.on{opacity:1;transform:translateY(-50%) scale(1)}
 .lib-foot{display:flex;align-items:center;gap:12px;padding:12px 22px;border-top:1px solid var(--line);background:color-mix(in srgb,var(--panel) 85%,#000)}
 .lib-foot .what{flex:1;min-width:0;color:var(--mut);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lib-foot .what b{color:var(--txt)}
 @media(max-width:720px){.lib-body{grid-template-columns:1fr}.lib-side{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}.lib-side .cap{display:none}.lib-top{flex-wrap:wrap}}
@@ -1159,6 +1189,63 @@ async function reactMode(){                       /* профиль «Реакц
   draw();panel();}
 
 /* профиль «Мурчик»: монтаж блогера в одном стиле (Вальдемар) */
+/* ---------- стили монтажа Мурчика: мини-телефоны на CSS ---------- */
+const MS_NAMES={frame:{card34:"окно 3:4",card45:"окно 4:5",cinema:"кинокадр",full:"весь экран"},
+  grade:{bw:"ч/б",warm:"тёплый",cold:"холодный",natural:"натуральный",punch:"сочный"},
+  intro:{stair:"слова лесенкой",bw_title:"ч/б начало + заголовок",top_title:"тема сверху",none:"без заголовка"},
+  subs:{word_chest:"по слову",word_bottom:"слово внизу",word_red:"красные слова",phrase:"фраза, жёлтое слово"}};
+const MS_DESC=s=>[MS_NAMES.frame[s.frame],MS_NAMES.grade[s.grade],MS_NAMES.subs[s.subs]].join(" · ");
+const MS_CATS=[["all","Все",s=>1],["card","Окно",s=>/card/.test(s.frame)],["cinema","Кино",s=>s.frame==="cinema"],["full","Весь экран",s=>s.frame==="full"],
+  ["bw","Ч/б",s=>s.grade==="bw"],["color","Цветные",s=>s.grade!=="bw"],["title","С заголовком",s=>s.intro!=="none"],["big","Красное слово сверху",s=>s.acc==="big_top"]];
+const MS_FILTER={bw:"grayscale(1) contrast(1.15)",warm:"sepia(.35) saturate(1.5) brightness(1.03)",cold:"saturate(.45) hue-rotate(12deg) brightness(.93) contrast(1.1)",natural:"none",punch:"saturate(1.35) contrast(1.12)"};
+const MS_WORDS=["бабки","решают","не","всё"];          /* «всё» — смысловое слово: красное / жёлтое / огромное сверху */
+/* настоящий кадр: та же обрезка, что в монтаже (card_crop): по ширине целиком, лицо в верхней трети */
+function msCrop(s,F){const[bw,bh,bx,by]=F.box||[F.w,F.h,0,0],ratio=s.fw/s.fh,z=(s.frame==="cinema"&&F.w/F.h>1.2)?1.9:1;
+  let cw,ch;if(bw/bh>ratio){ch=bh/z;cw=ch*ratio}else{cw=bw/z;ch=cw/ratio}
+  const x=bx+(bw-cw)/2,y=by+Math.max(0,Math.min(bh-ch,(bh-ch)*.32)),pc=(v,d)=>d>1?(v/d*100).toFixed(2)+"%":"50%";
+  return`background:url(${F.img}) ${pc(x,F.w-cw)} ${pc(y,F.h-ch)}/${(F.w/cw*100).toFixed(2)}% auto no-repeat;`;}
+function msPhone(s,F){const P=v=>(v/19.2).toFixed(2)+"%",X=v=>(v/10.8).toFixed(2)+"%";
+  const fr=`left:${X(s.fx)};top:${P(s.fy)};width:${X(s.fw)};height:${P(s.fh)};border-radius:${s.fr?Math.round(s.fr/7)+"px":0}`;
+  let intro="";
+  if(s.intro==="stair")intro=`<div class="ms-stair" style="top:${P(1000)}"><i>Деньги</i><i>Спорт</i><i>Связи</i></div>`;
+  else if(s.intro==="bw_title")intro=`<div class="ms-title y" style="top:${P(s.title_y)}">КАК Я ПОТЕРЯЛ<br>ПЕРВЫЕ ДЕНЬГИ</div>`;
+  else if(s.intro==="top_title")intro=`<div class="ms-title" style="top:${P(s.title_y)}">Как я потерял первые деньги</div>`;
+  const subs=`<div class="ms-sub ${s.subs} acc-${s.acc}" data-mode="${s.subs==="phrase"?"phrase":"word"}" style="top:${P(s.sub_y)}">${MS_WORDS.map(w=>`<span>${s.subs==="phrase"?w.toUpperCase():w}</span>`).join(" ")}</div>`;
+  const big=s.acc==="big_top"?`<div class="ms-big" style="top:${P(s.top_y)}">всё</div>`:"";
+  return`<div class="ms-ph"><div class="ms-fr" style="${fr}"><div class="ms-scene" style="${F&&F.img?msCrop(s,F):""}filter:${MS_FILTER[s.grade]}" data-f="${MS_FILTER[s.grade]}"${s.intro==="bw_title"?' data-bw="1"':""}>${F&&F.img?"":`<b class="ms-man ${s.frame}"></b>`}</div>${s.intro==="bw_title"?'<em class="ms-bwnote">1 с ч/б</em>':""}</div>${intro}${big}${subs}</div>`;}
+function openMurStyles(list,cur,onPick,F){let cat="all",pick=cur||"mine";
+  const cnt=c=>list.filter(MS_CATS.find(x=>x[0]===c)[2]).length;
+  const w=modal(`<div class="lib-top"><h3>Стиль монтажа<small>${list.length} стилей по роликам ниши · клик — выбрать, двойной клик — сразу применить</small></h3>
+      <button class="lib-x" id="ms_x" aria-label="Закрыть">×</button></div>
+    <div class="lib-body"><aside class="lib-side">
+      <button class="lib-mode" data-k="mine" style="margin-top:0"><i>✦</i><div>Свой у каждого<small>стиль сам меняется по ПК и видео — у друзей не совпадёт</small></div></button>
+      <p class="cap" style="margin-top:14px">Подборки</p>
+      ${MS_CATS.filter(c=>cnt(c[0])).map(c=>`<button class="lib-nav${c[0]===cat?" on":""}" data-c="${c[0]}">${c[1]}<span>${cnt(c[0])}</span></button>`).join("")}</aside>
+    <div class="lib-main"><div class="lib-grid ms-grid" id="ms_grid"></div></div></div>
+    <div class="lib-foot"><div class="what" id="ms_what"></div><button class="btn sm" id="ms_no">Отмена</button><button class="btn sm primary" style="--h:38px;padding:0 22px;font-size:13px" id="ms_ok">Применить</button></div>`,"lib");
+  w.querySelector(".dlg>.close").hidden=true;w.querySelector("#ms_x").onclick=w.close;w.querySelector("#ms_no").onclick=w.close;
+  const grid=w.querySelector("#ms_grid");
+  const what=()=>{const s=list.find(x=>x.key===pick);w.querySelector("#ms_what").innerHTML=s?`<b>${esc(s.name)}</b> · ${MS_DESC(s)} · ${MS_NAMES.intro[s.intro]}`:"<b>Свой у каждого</b> — кадр, цвет, начало и субтитры выбираются сами для каждого ПК и видео";
+    grid.querySelectorAll(".lib-card").forEach(c=>c.classList.toggle("on",c.dataset.k===pick));w.querySelectorAll(".lib-mode").forEach(c=>c.classList.toggle("on",c.dataset.k===pick));
+    w.querySelector("#ms_ok").disabled=pick===cur;};
+  const draw=()=>{const f=MS_CATS.find(x=>x[0]===cat)[2];
+    grid.innerHTML=list.filter(f).map(s=>`<button class="lib-card${s.key===cur?" cur":""}" data-k="${s.key}">${msPhone(s,F)}<b>${esc(s.name)}</b><small>${MS_DESC(s)}</small></button>`).join("");what();};
+  const apply=()=>{if(pick!==cur)onPick(pick);w.close()};
+  w.querySelector("#ms_ok").onclick=apply;
+  w.querySelector(".lib-side").onclick=e=>{const b=e.target.closest(".lib-nav");if(b){cat=b.dataset.c;w.querySelectorAll(".lib-nav").forEach(x=>x.classList.toggle("on",x===b));draw();return}
+    const m=e.target.closest(".lib-mode");if(m){pick=m.dataset.k;what()}};
+  w.querySelector(".lib-side").ondblclick=e=>{if(e.target.closest(".lib-mode"))apply()};
+  grid.onclick=e=>{const c=e.target.closest(".lib-card");if(c){pick=c.dataset.k;what()}};
+  grid.ondblclick=e=>{if(e.target.closest(".lib-card"))apply()};
+  draw();
+  let tick=0;const iv=setInterval(()=>{if(!document.body.contains(w))return clearInterval(iv);tick++;   /* субтитры бегут, как в ролике */
+    grid.querySelectorAll(".ms-sub").forEach(t=>{const sp=t.children,ph=t.dataset.mode==="phrase";
+      for(let i=0;i<sp.length;i++)sp[i].classList.toggle("on",ph?(i<2?tick%2===0:tick%2===1):i===tick%sp.length)});
+    grid.querySelectorAll(".ms-big").forEach(b=>b.classList.toggle("on",tick%4===3));
+    grid.querySelectorAll(".ms-ph").forEach(p=>{const has=p.querySelector(".ms-stair,.ms-title");p.classList.toggle("intro",!!has&&tick%8<3);   /* сначала заголовок, потом субтитры */
+      const sc=p.querySelector(".ms-scene");if(sc.dataset.bw)sc.style.filter=tick%8<2?"grayscale(1)":sc.dataset.f;});},650);
+  grid.querySelectorAll(".ms-ph").forEach(p=>{if(p.querySelector(".ms-stair,.ms-title"))p.classList.add("intro")});}
+
 async function blogMode(){
   document.body.classList.add("blogmode");
   const r0=await api("blog",{act:"init"});const sv=r0.saved||{};
@@ -1169,7 +1256,9 @@ async function blogMode(){
   $("#list").innerHTML='<div class="empty">Очередь пуста.<br>Кинь видео или ссылку с YouTube — здесь появятся лучшие моменты.</div>';
   /* в центре: плеер + настройки Мурчика вместо рамок и форматов */
   const sec=document.createElement("div");sec.className="blogset";
-  sec.innerHTML=`<div><p class="label">Главные слова (первые 3–4 слова ролика) <span class="note" id="bl_sugg"></span></p>
+  sec.innerHTML=`<div><p class="label">Стиль монтажа <span class="note">«Свой у каждого» — у друзей те же видео выйдут по-другому</span></p>
+      <button class="sel lookbtn" id="bl_msbtn" type="button"></button><input type="hidden" id="bl_ms"></div>
+    <div><p class="label">Главные слова (первые 3–4 слова ролика) <span class="note" id="bl_sugg"></span></p>
       <div class="flex"><input class="inp" id="bl_ht" placeholder="Например: Бокс Спорт Связи. Пусто — возьмутся первые сказанные слова" autocomplete="off" style="flex:1">
         <select class="inp" id="bl_case" style="height:42px;width:auto"><option value="title">С большой буквы</option><option value="caps">ЗАГЛАВНЫМИ</option><option value="as_is">как вписал</option></select>
         <select class="inp" id="bl_pal" style="height:42px;width:auto"><option value="red_white">красный / белый</option><option value="red">только красный</option><option value="red_yellow">красный / жёлтый</option></select></div></div>
@@ -1194,10 +1283,15 @@ async function blogMode(){
   fillF(r0.hook_fonts||[],sv.hook_font||"");fillMus(r0.music||[],sv.music??null);fillSnd(r0.sounds||[],sv.click||"mouse");
   q("#bl_db").value=sv.music_db??-20;q("#bl_cv").value=sv.click_vol??70;q("#bl_case").value=sv.hook_case||"title";q("#bl_pal").value=sv.hook_palette||"red_white";
   q("#bl_fill").checked=sv.cut_fillers!==false;q("#bl_tg").checked=sv.tg!==false;
+  const msUI=k=>{q("#bl_ms").value=k;const s=(r0.mstyles||[]).find(x=>x.key===k);
+    q("#bl_msbtn").innerHTML=s?`${esc(s.name)} <em>· ${MS_DESC(s)}</em>`:`Свой у каждого <em>· на каждом ПК и видео свой стиль — у друзей выйдет по-другому</em>`;};
+  msUI(sv.mstyle||"mine");q("#bl_msbtn").onclick=async e=>{e.stopPropagation();
+    const F=S.msFrame||(S.msFrame=await api("blog",{act:"style_frame"}));   /* один постоянный кадр Вальдемара во всех стилях */
+    openMurStyles(r0.mstyles||[],q("#bl_ms").value,k=>{msUI(k);toast("Стиль монтажа: "+((r0.mstyles||[]).find(x=>x.key===k)||{name:"Свой у каждого"}).name)},F&&F.img?F:null)};
   const lab=()=>{q("#bl_dbv").textContent=q("#bl_db").value+" дБ";q("#bl_cvv").textContent=q("#bl_cv").value+"%";};lab();q("#bl_db").oninput=lab;q("#bl_cv").oninput=lab;
   const opts=()=>({music:q("#bl_mus").value||null,music_db:+q("#bl_db").value,click:q("#bl_ck").value,click_vol:+q("#bl_cv").value,
     hook_font:q("#bl_hf").value||null,hook_text:q("#bl_ht").value.trim(),hook_case:q("#bl_case").value,hook_palette:q("#bl_pal").value,
-    cut_fillers:q("#bl_fill").checked,tg:q("#bl_tg").checked,bw:true,cut_pauses:true});
+    cut_fillers:q("#bl_fill").checked,tg:q("#bl_tg").checked,bw:true,cut_pauses:true,mstyle:q("#bl_ms").value||"mine"});
   q("#bl_addf").onclick=async()=>{const r=await api("blog",{act:"add_font"});if(!r.added)return;
     if(!r.cyr){toast("В этом шрифте нет русских букв — им не написать по-русски. Нужна версия с кириллицей.",false);fillF(r.fonts,q("#bl_hf").value);return}
     fillF(r.fonts,r.added);toast("Шрифт добавлен");};
