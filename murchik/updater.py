@@ -1,0 +1,226 @@
+# -*- coding: utf-8 -*-
+"""
+Обновления программы через интернет.
+
+У всех:      программа сама проверяет, есть ли новая версия, и ставит её по кнопке.
+У автора:    python updater.py release      собирает папку release, которую нужно загрузить в хранилище.
+
+Адрес хранилища лежит в файле update_url.txt (одна строка, папка с файлами и version.json).
+Обновляются только файлы программы из списка FILES. Ключи, настройки и список стримеров не трогаются.
+"""
+import hashlib
+import json
+import py_compile
+import shutil
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+BASE = Path(__file__).resolve().parent
+URL_FILE = BASE / "update_url.txt"
+STATE_FILE = BASE / "update_state.json"
+FILES = ["montage.py", "review.py", "top5.py", "fixcam.py", "clipfinder.py", "updater.py", "webapp.py", "ui.html", "logo_src.png", "highlights.py", "accounts.py", "agents.py", "leaders.py", "tgbot.py", "blogger.py", "reaction.py", "ms_frame.jpg", "report.py"]
+
+
+def base_url():
+    if not URL_FILE.exists():
+        return ""
+    lines = URL_FILE.read_text(encoding="utf-8-sig").strip().splitlines()
+    url = lines[0].strip() if lines else ""
+    # ссылку на страницу GitHub превращаем в адрес самих файлов
+    if url.startswith("https://github.com/"):
+        parts = url[len("https://github.com/"):].strip("/").split("/")
+        if len(parts) >= 2:
+            branch = parts[3] if len(parts) >= 4 and parts[2] == "tree" else "main"
+            sub = "/".join(parts[4:]) if len(parts) > 4 and parts[2] == "tree" else ""   # папка канала (murchik)
+            url = f"https://raw.githubusercontent.com/{parts[0]}/{parts[1]}/{branch}/" + (sub + "/" if sub else "")
+    if not (url.startswith("https://") or url.startswith("http://127.0.0.1")):
+        return ""
+    return url if url.endswith("/") else url + "/"
+
+
+def pinned(url):
+    """raw.githubusercontent отдаёт файлы из кэша по одному: version.json уже новый, а montage.py ещё старый,
+    и обновление падало «скачался не полностью». Берём все файлы из одного коммита — у него кэш всегда целый."""
+    pre = "https://raw.githubusercontent.com/"
+    if not url.startswith(pre):
+        return url
+    owner, repo, branch, *sub = url[len(pre):].strip("/").split("/")
+    sub = "/".join(sub)
+    try:
+        info = json.loads(_get(f"https://api.github.com/repos/{owner}/{repo}/commits/{branch}").decode("utf-8"))
+        return f"{pre}{owner}/{repo}/{info['sha']}/" + (sub + "/" if sub else "")
+    except Exception:
+        return url                               # API недоступен (лимит запросов) — работаем как раньше
+
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _get(url):
+    req = urllib.request.Request(url + ("&" if "?" in url else "?") + f"t={int(time.time())}",
+                                 headers={"User-Agent": "prodaem-clipper", "Cache-Control": "no-cache"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.read()
+
+
+def applied_time():
+    try:
+        return float(json.loads(STATE_FILE.read_text(encoding="utf-8")).get("time", 0))
+    except Exception:
+        return 0.0
+
+
+def check():
+    """Есть ли обновление. Возвращает {"available": bool, "version", "notes", "changed": [...]}
+    или {"error": "..."}; {"off": True}, если адрес обновлений не задан."""
+    url = base_url()
+    if not url:
+        return {"off": True}
+    url = pinned(url)
+    try:
+        info = json.loads(_get(url + "version.json").decode("utf-8-sig"))
+    except Exception as e:
+        return {"error": f"не получилось проверить обновления: {e}"}
+    files = {k: v for k, v in (info.get("files") or {}).items() if k in FILES}
+    changed = [n for n, h in files.items() if not (BASE / n).exists() or sha(BASE / n) != h]
+    newer = float(info.get("time", 0)) > applied_time()
+    missing = any(not (BASE / n).exists() for n in changed)   # новый файл программы, которого ещё нет
+    return {"available": bool(changed) and (newer or missing), "version": str(info.get("version", "")),
+            "notes": str(info.get("notes", "")), "changed": changed, "files": files, "time": info.get("time", 0),
+            "url": url}
+
+
+def apply(info):
+    """Скачивает и ставит обновление. Сначала проверяет все файлы целиком и только потом заменяет:
+    если хоть один файл битый или с ошибкой, программа остаётся как была."""
+    url = base_url()
+    fresh = check()                              # сверяемся с хранилищем заново: старый список мог устареть
+    if fresh.get("changed") is not None and not fresh.get("error"):
+        info = fresh
+    url = info.get("url") or url                 # файлы — из того же коммита, что и version.json
+    tmp = BASE / "cache" / "update_tmp"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True, exist_ok=True)
+    for name in info["changed"]:
+        data = b""
+        for attempt in range(4):                 # GitHub иногда пару минут отдаёт старую копию: ждём и пробуем ещё
+            data = _get(url + name)
+            if hashlib.sha256(data).hexdigest() == info["files"][name]:
+                break
+            if attempt == 1:                     # может, это version.json устарел, а файлы уже новые
+                again = check()
+                if again.get("files", {}).get(name) == hashlib.sha256(data).hexdigest():
+                    info = again
+                    url = info.get("url") or url
+                    break
+            time.sleep(5 * (attempt + 1))
+        if hashlib.sha256(data).hexdigest() != info["files"][name]:
+            raise RuntimeError(f"файл {name} скачался не полностью, попробуй ещё раз через пару минут")
+        (tmp / name).write_bytes(data)
+        if name.endswith(".py"):
+            try:
+                py_compile.compile(str(tmp / name), cfile=str(tmp / (name + "c")), doraise=True)
+            except py_compile.PyCompileError:
+                raise RuntimeError(f"в обновлении ошибка в файле {name}, оно не установлено")
+    backup = BASE / "backup" / time.strftime("%Y-%m-%d_%H-%M-%S")
+    backup.mkdir(parents=True, exist_ok=True)
+    for name in info["changed"]:
+        if (BASE / name).exists():
+            shutil.copy2(BASE / name, backup / name)          # старую версию можно вернуть из папки backup
+        shutil.copy2(tmp / name, BASE / name)
+    _save_state(info.get("time", 0), str(info.get("version", "")), str(info.get("notes", "")), shown=False)
+    shutil.rmtree(tmp, ignore_errors=True)
+    return info["changed"]
+
+
+def _load_state():
+    try:
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_state(t, version, notes, shown):
+    """Запоминаем версию и её описание: после перезапуска окно покажет «Что нового», а кнопка — историю."""
+    st = _load_state()
+    hist = [h for h in st.get("history", []) if h.get("version") != version]
+    if version:
+        hist = [{"version": version, "notes": notes}] + hist
+    STATE_FILE.write_text(json.dumps({"time": t, "version": version, "notes": notes, "history": hist[:20],
+                                      "shown": version if shown else st.get("shown")}, ensure_ascii=False),
+                          encoding="utf-8")
+
+
+def whats_new(mark=True):
+    """Что поменялось в установленной версии. {"version", "notes", "history", "fresh"}: fresh — ещё не показывали.
+    Старый обновлятор описание не сохранял — тогда берём его из version.json на GitHub (это и есть эта версия)."""
+    st = _load_state()
+    ver = str(st.get("version") or "")
+    if not ver:
+        return None
+    notes = st.get("notes")
+    if notes is None:
+        try:
+            url = base_url()
+            info = json.loads(_get(pinned(url) + "version.json").decode("utf-8-sig")) if url else {}
+            notes = str(info.get("notes", "")) if str(info.get("version", "")) == ver else ""
+        except Exception:
+            notes = ""
+        hist = [{"version": ver, "notes": notes}] + [h for h in st.get("history", []) if h.get("version") != ver]
+        st.update(notes=notes, history=hist[:20])
+    fresh = st.get("shown") != ver
+    if mark and fresh:
+        st["shown"] = ver
+    try:
+        STATE_FILE.write_text(json.dumps(st, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+    return {"version": ver, "notes": notes or "", "history": st.get("history", []), "fresh": fresh}
+
+
+MURCHIK_CHANNEL = "https://github.com/vladmosharskiy84-cmyk/Prodaem-Clipper/tree/main/murchik"
+
+
+def make_release(notes="", channel=""):
+    """Для автора: собирает папку release с файлами программы и version.json.
+    channel="murchik": отдельный канал приложения МУРЧИК (папка murchik/ в том же хранилище) —
+    массовые пользователи Мурчика получают только то, что выпущено именно для них."""
+    rel = BASE / ("release_" + channel if channel else "release")
+    shutil.rmtree(rel, ignore_errors=True)
+    rel.mkdir()
+    files = {}
+    for name in FILES:
+        if (BASE / name).exists():
+            if name.endswith(".py"):                 # проверяем на ошибки только код, ui.html и картинки как есть
+                py_compile.compile(str(BASE / name), cfile=str(BASE / "cache" / (name + "c")), doraise=True)
+            shutil.copy2(BASE / name, rel / name)
+            files[name] = sha(BASE / name)
+    now = time.time()
+    info = {"version": time.strftime("%Y.%m.%d %H:%M"), "time": now, "notes": notes, "files": files}
+    (rel / "version.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+    _save_state(now, info["version"], notes, shown=True)     # автору своё «Что нового» не показываем
+    return rel, info
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] in ("release", "release-murchik"):
+        (BASE / "cache").mkdir(exist_ok=True)
+        channel = "murchik" if sys.argv[1] == "release-murchik" else ""
+        try:
+            notes = " ".join(sys.argv[2:]) or input("Что нового в этой версии (одной строкой): ").strip()
+        except EOFError:
+            notes = ""
+        folder, inf = make_release(notes, channel)
+        print(f"\nГотово: версия {inf['version']}, файлов: {len(inf['files'])}")
+        print(f"Папка: {folder}")
+        print("Загрузи ВСЕ файлы из этой папки в своё хранилище на GitHub" + (" в папку murchik/" if channel else "")
+              + " (Add file -> Upload files -> Commit changes).")
+        if sys.platform == "win32":
+            import subprocess
+            subprocess.run(["explorer", str(folder)])
+    else:
+        res = check()
+        print(res if not res.get("available") else f"Есть обновление {res['version']}: {res['notes']} ({', '.join(res['changed'])})")
