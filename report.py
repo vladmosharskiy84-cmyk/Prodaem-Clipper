@@ -89,7 +89,9 @@ def sheet(video):
 def montage_done(out, meta, title=""):
     rv = meta.get("review") or meta.get("agents") or {}
     ev("montage", title=str(title)[:120], style=meta.get("style", ""), dur=meta.get("duration"),
-       hook=meta.get("hook", ""), score=rv.get("score"), decision=rv.get("decision", ""), sheet=sheet(out))
+       hook=meta.get("hook", ""), score=rv.get("score"), decision=rv.get("decision", ""),
+       reason=str(rv.get("reason") or "")[:200], secs=meta.get("secs"), font=meta.get("font", ""),
+       head=meta.get("head", ""), music=bool(meta.get("music")), sheet=sheet(out))
 
 
 def montage_bg(out, meta, title=""):
@@ -148,3 +150,99 @@ def start():
         return
     _started = True
     threading.Thread(target=_loop, name="report", daemon=True).start()
+    threading.Thread(target=_pulse, name="report-pulse", daemon=True).start()
+    _usage_hook()
+
+
+# ---------- пульс: программа открыта и что делает (раз в 3 минуты, без очереди — старый пульс не нужен) ----------
+STATE = None                                     # webapp ставит функцию: {"doing", "queue", ...}
+PULSE_SEC = 180
+
+
+def _health():
+    import shutil
+    try:
+        free = round(shutil.disk_usage(str(m.BASE)).free / 1e9, 1)
+    except Exception:
+        free = None
+    return {"disk_gb": free, "ffmpeg": bool(shutil.which("ffmpeg"))}
+
+
+def _pulse():
+    while True:
+        try:
+            st = STATE() if STATE else {}
+        except Exception:
+            st = {}
+        rec = dict(st, **_health(), kind="ping", t=time.time(), app=APP, profile=PROFILE, usd_today=usd_today())
+        try:
+            _send([rec])
+        except Exception:
+            pass
+        time.sleep(PULSE_SEC)
+
+
+# ---------- расходы Claude: считаем по ответам API (usage) — примерно, по ценам за 1M токенов ----------
+PRICES = {"haiku-5-5": (0.10, 0.50), "sonnet-5-5": (2.0, 10.0), "opus-5-5": (4.0, 20.0), "fable-5-2": (8.0, 40.0),
+          "haiku-4-5": (1.0, 5.0), "sonnet-5": (2.0, 10.0), "sonnet-4-6": (3.0, 15.0), "opus-5": (5.0, 25.0)}
+SPEND_FILE = m.CACHE / "claude_spend.json"       # {"дата": {"usd", "in", "out", "calls"}}
+_spend_lock = threading.Lock()
+
+
+def _price(model):
+    for k, v in PRICES.items():
+        if k in str(model):
+            return v
+    return (2.0, 10.0)
+
+
+def usd_today():
+    try:
+        return round(json.loads(SPEND_FILE.read_text(encoding="utf-8")).get(time.strftime("%Y-%m-%d"), {}).get("usd", 0.0), 4)
+    except Exception:
+        return 0.0
+
+
+def _count(data):
+    u = data.get("usage") or {}
+    pin, pout = _price(data.get("model", ""))
+    inp = int(u.get("input_tokens") or 0) + int(u.get("cache_creation_input_tokens") or 0)
+    cached = int(u.get("cache_read_input_tokens") or 0)
+    out = int(u.get("output_tokens") or 0)
+    usd = (inp * pin + cached * pin * 0.1 + out * pout) / 1e6
+    day = time.strftime("%Y-%m-%d")
+    with _spend_lock:
+        try:
+            s = json.loads(SPEND_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            s = {}
+        d = s.setdefault(day, {"usd": 0.0, "in": 0, "out": 0, "calls": 0})
+        d["usd"] += usd
+        d["in"] += inp + cached
+        d["out"] += out
+        d["calls"] += 1
+        s = {k: v for k, v in s.items() if k >= time.strftime("%Y-%m-%d", time.localtime(time.time() - 40 * 86400))}
+        m.CACHE.mkdir(exist_ok=True)
+        SPEND_FILE.write_text(json.dumps(s), encoding="utf-8")
+
+
+def _usage_hook():
+    """Все запросы к Claude в программе идут через requests: смотрим ответ и считаем токены. Сам запрос не меняем."""
+    try:
+        import requests
+    except ImportError:
+        return
+    orig = requests.sessions.Session.request
+    if getattr(orig, "_claude_count", False):
+        return
+
+    def request(self, method, url, *a, **k):
+        r = orig(self, method, url, *a, **k)
+        try:
+            if "api.anthropic.com/v1/messages" in str(url) and r.status_code == 200:
+                _count(r.json())
+        except Exception:
+            pass
+        return r
+    request._claude_count = True
+    requests.sessions.Session.request = request

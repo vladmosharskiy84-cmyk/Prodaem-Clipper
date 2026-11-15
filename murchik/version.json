@@ -1,7 +1,7 @@
 {
-  "version": "2026.11.15 19:36",
-  "time": 1794764188.2296402,
-  "notes": "52 шрифта с русскими буквами; заголовок вместо главных слов (5 секунд, плавно исчезает) со своим шрифтом и цветом",
+  "version": "2026.11.15 19:44",
+  "time": 1794764682.6233394,
+  "notes": "Программа сообщает админу о сбоях (нет денег на Claude, мало места), чтобы быстро помогать",
   "files": {
     "montage.py": "5ca563429f3106b5eb99ccca53b551d8b8154951338b1ee854d915f85f95d8ca",
     "review.py": "d467c90b91e88e43df7b517245648bc91dcc1ecbecfbaf131a32eea3bb235e21",
@@ -9,7 +9,7 @@
     "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
     "clipfinder.py": "cfc0f40ec627eb3086312eb62b499e6382b78c8068702bd18dca40ed5d150645",
     "updater.py": "e8f41dc517c76f8c4df2c3c0f53cdd275a0a3fcd8aa7ba7bb6bc669c1bdc28c1",
-    "webapp.py": "66678136f87a02aa316fc2f69c01ec1bdb07dca9e0f2bc3da151c730db2ba597",
+    "webapp.py": "ba25706b0ed1a4dbff85b9524f0877fac071ff93b9d3102e0114d54e3d891f43",
     "ui.html": "724a6ca8e6e1062cf22a4bea8ad916583833943eeb6d2e31cec70f44f62c4f9b",
     "logo_src.png": "e43b51bb73da86652be2c2adac971e5b39557d895d84a4c2449e9b99f95c1739",
     "highlights.py": "1e9b6942cfbc2de55466c191e0d50fe8db23d159e5ae78d98fcb826623e5091d",
@@ -20,6 +20,6 @@
     "blogger.py": "9b83876aaea48d9c58e17e334831672fa3ee5c7293752b3af3b6d27d56e0ecfc",
     "reaction.py": "6080db0aad9baaee2c5a5c9d5485976f34a039b266297b22a4181b9da6152dab",
     "ms_frame.jpg": "8feed06044da01bbf185516de08c2ee2d622d6565eb5c93c76ba8f5fe3b77230",
-    "report.py": "6c33760b01514d862e4433fa9c69d553e17d826dbebcba4cd6b330c82720433f"
+    "report.py": "f4efa4e60ce3cc2cf6ac454c11d76a4384969c62f4180672854ddc0c758087de"
   }
 }

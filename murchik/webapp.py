@@ -563,6 +563,20 @@ def render_lock(port=None):
 BLOG_CFG = BASE / "blogger.json"
 
 
+def report_state():
+    """Для пульса админу: что программа делает сейчас."""
+    with A.lock:
+        run = [j for j in A.job_list if j.get("state") == "run"]
+        wait = sum(1 for j in A.job_list if j.get("state") == "wait")
+    if run:
+        doing = "ищет моменты в видео" if run[0].get("streamer") == "Целое видео" else "монтирует"
+    elif A.finding:
+        doing = "ищет клипы"
+    else:
+        doing = "открыта"
+    return {"doing": doing, "stage": (run[0].get("stage") or "")[:90] if run else "", "queue": wait}
+
+
 def mass_murchik():
     """Это массовое приложение МУРЧИК (свой канал обновлений murchik/), а не Мурчик в полной программе Влада или братиков.
     Только там окно первого запуска (имя + свой ключ) и отчёты админу."""
@@ -589,8 +603,12 @@ def run_blog(job, j):
                   titles=[str(p.get("title", ""))[:80] for p in made][:12])
         A.refresh()
         return BASE / made[0]["file"]
+    t0 = time.time()
     out, meta = blogger.make_checked(job["src"], A.cfg, A.enc, job["opts"], say=say)
-    report.montage_done(out, meta, job.get("title") or job.get("clip", {}).get("title", ""))
+    o = job["opts"]                              # админу: сколько монтировал и что выбрал
+    report.montage_done(out, dict(meta, secs=round(time.time() - t0), font=o.get("title_font") or o.get("hook_font") or "",
+                                  head=o.get("head_mode") or "words", music=o.get("music")),
+                        job.get("title") or job.get("clip", {}).get("title", ""))
     rv = meta.get("review") or {}
     job["note"] = (("критик: выкладывать" if rv.get("decision") == "publish" else "критик: брак")
                    + (f" {rv['score']}/10" if rv.get("score") is not None else "")) if rv else ""
@@ -690,6 +708,7 @@ def blog_req(d):
                                   "max_gap", "mstyle", "vlog", "sub_font", "head_mode", "title_font", "title_color") if k in d}
         BLOG_CFG.write_text(json.dumps(opts, ensure_ascii=False), encoding="utf-8")
         n_long = 0
+        report.ev("added", n=len(files), video=str(files[0])[:150] if files else "")
         for f in files:
             jid = secrets.token_hex(4)
             is_url = bool(re.match(r"https?://", str(f)))
@@ -1003,7 +1022,9 @@ def worker():
                 meta = json.loads(Path(out).with_suffix(".json").read_text(encoding="utf-8"))
             except Exception:
                 meta = {}
-            report.montage_bg(out, dict(meta, agents=job.get("agents") or meta.get("agents") or {}),
+            report.montage_bg(out, dict(meta, agents=job.get("agents") or meta.get("agents") or {},
+                                        secs=round(time.time() - j["start"]) if j and j.get("start") else None,
+                                        font=job.get("font") or "", head=job.get("sub_look") or ""),
                               f"{job.get('streamer') or job['clip'].get('streamer') or ''} · "
                               f"{meta.get('final_title') or job['clip'].get('title', '')}")
         with A.lock:
@@ -1281,6 +1302,7 @@ def vod_req(d):
 
 
 def skip_req(d):
+    report.ev("skipped")
     p = A.item(d["id"])
     with A.lock:
         A.st["clips"][p["clip_id"]] = "skipped"
@@ -2423,7 +2445,7 @@ def look(d):
 ACTIONS = {
     "init": lambda d: init_data(),
     "queue": lambda d: queue_data(),
-    "open": lambda d: open_clip(d["id"]),
+    "open": lambda d: (report.ev("opened"), open_clip(d["id"]))[1],
     "preview": preview_req,
     "preview_video": preview_video_req,
     "montage": montage_req,
@@ -2833,6 +2855,7 @@ def run(port=0, window=True, token=None, parent=0, start=""):
     threading.Thread(target=worker, name="montage-worker", daemon=True).start()
     # отчёты админу: из МУРЧИКА у людей и из полной программы (Влад, братики) — всё в одном месте
     report.ENABLED = True
+    report.STATE = report_state
     report.APP = "murchik" if mass_murchik() else "clipper"
     report.PROFILE = "МУРЧИК" if mass_murchik() else (rv.PROFILE or "СНГ")
     try:
