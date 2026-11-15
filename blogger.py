@@ -119,6 +119,50 @@ HOOK_FONTS = ["Playfair Display Italic", "Monotype Corsiva", "Marck Script", "Lo
 SUB_FONTS = ["Inter SemiBold", "Montserrat Bold"]
 WEB_FONTS = {"Playfair Display Italic": ("Playfair Display", "500", True), "Marck Script": ("Marck Script", "400", False), "Lora Bold Italic": ("Lora", "700", True),
              "Inter SemiBold": ("Inter", "600", False), "Montserrat Bold": ("Montserrat", "700", False)}
+
+# ---------- пул шрифтов (бесплатные Google Fonts, лицензия OFL, все с русскими буквами — проверено 15.11.2026) ----------
+# (имя в программе, семейство, жирность, курсив, группа). Скачиваются сами при первом выборе в папку fonts.
+FONT_POOL_TITLE = [
+    ("Unbounded Black", "Unbounded", "900", False, "Жирные"), ("Dela Gothic One", "Dela Gothic One", "400", False, "Жирные"),
+    ("Russo One", "Russo One", "400", False, "Жирные"), ("Rubik Mono One", "Rubik Mono One", "400", False, "Жирные"),
+    ("Days One", "Days One", "400", False, "Жирные"), ("Seymour One", "Seymour One", "400", False, "Жирные"),
+    ("Montserrat Black", "Montserrat", "900", False, "Жирные"), ("Tektur Black", "Tektur", "900", False, "Жирные"),
+    ("Sofia Sans Extra Condensed Black", "Sofia Sans Extra Condensed", "900", False, "Узкие (как Druk)"),
+    ("Alumni Sans Black", "Alumni Sans", "900", False, "Узкие (как Druk)"), ("Oswald Bold", "Oswald", "700", False, "Узкие (как Druk)"),
+    ("Roboto Condensed Black", "Roboto Condensed", "900", False, "Узкие (как Druk)"),
+    ("Playfair Display Italic", "Playfair Display", "500", True, "Кино и курсив"),
+    ("Playfair Display Black Italic", "Playfair Display", "900", True, "Кино и курсив"),
+    ("Lora Bold Italic", "Lora", "700", True, "Кино и курсив"), ("Cormorant Garamond Italic", "Cormorant Garamond", "600", True, "Кино и курсив"),
+    ("Old Standard TT Italic", "Old Standard TT", "400", True, "Кино и курсив"), ("Yeseva One", "Yeseva One", "400", False, "Кино и курсив"),
+    ("Prata", "Prata", "400", False, "Кино и курсив"),
+    ("Marck Script", "Marck Script", "400", False, "Рукописные"), ("Caveat Bold", "Caveat", "700", False, "Рукописные"),
+    ("Great Vibes", "Great Vibes", "400", False, "Рукописные"), ("Bad Script", "Bad Script", "400", False, "Рукописные"),
+    ("Pacifico", "Pacifico", "400", False, "Рукописные"), ("Lobster", "Lobster", "400", False, "Рукописные"),
+    ("Amatic SC Bold", "Amatic SC", "700", False, "Рукописные"),
+    ("Rubik Wet Paint", "Rubik Wet Paint", "400", False, "Улица и гранж"), ("Rubik Spray Paint", "Rubik Spray Paint", "400", False, "Улица и гранж"),
+    ("Rubik Glitch", "Rubik Glitch", "400", False, "Улица и гранж"), ("Rubik Burned", "Rubik Burned", "400", False, "Улица и гранж"),
+    ("Rubik Doodle Shadow", "Rubik Doodle Shadow", "400", False, "Улица и гранж"), ("Rampart One", "Rampart One", "400", False, "Улица и гранж"),
+    ("Pixelify Sans Bold", "Pixelify Sans", "700", False, "Улица и гранж"), ("Stalinist One", "Stalinist One", "400", False, "Улица и гранж"),
+]
+FONT_POOL_SUB = [
+    ("Montserrat Bold", "Montserrat", "700", False, "Субтитры"), ("Montserrat ExtraBold", "Montserrat", "800", False, "Субтитры"),
+    ("Inter SemiBold", "Inter", "600", False, "Субтитры"), ("Inter Black", "Inter", "900", False, "Субтитры"),
+    ("Manrope ExtraBold", "Manrope", "800", False, "Субтитры"), ("Golos Text Bold", "Golos Text", "700", False, "Субтитры"),
+    ("Onest Bold", "Onest", "700", False, "Субтитры"), ("Rubik Bold", "Rubik", "700", False, "Субтитры"),
+    ("Rubik Black", "Rubik", "900", False, "Субтитры"), ("Nunito Black", "Nunito", "900", False, "Субтитры"),
+    ("Geologica Black", "Geologica", "900", False, "Субтитры"), ("Commissioner Black", "Commissioner", "900", False, "Субтитры"),
+    ("Exo 2 Bold", "Exo 2", "700", False, "Субтитры"), ("Raleway Black", "Raleway", "900", False, "Субтитры"),
+    ("Jost Bold", "Jost", "700", False, "Субтитры"), ("Roboto Condensed Bold", "Roboto Condensed", "700", False, "Субтитры"),
+    ("Sofia Sans Condensed Black", "Sofia Sans Condensed", "900", False, "Субтитры"), ("Unbounded Black", "Unbounded", "900", False, "Субтитры"),
+]
+for _n, _f, _w, _i, _g in FONT_POOL_TITLE + FONT_POOL_SUB:
+    WEB_FONTS.setdefault(_n, (_f, _w, _i))
+
+
+def font_pool():
+    """Для окна: [{name, family, weight, italic, group}] — заглавные и субтитры."""
+    row = lambda x: {"name": x[0], "family": x[1], "weight": int(x[2]), "italic": x[3], "group": x[4]}
+    return {"title": [row(x) for x in FONT_POOL_TITLE], "sub": [row(x) for x in FONT_POOL_SUB]}
 LOCAL_FONTS = {"Monotype Corsiva": ["C:/Windows/Fonts/MTCORSVA.TTF"],
                "Inter SemiBold": ["/usr/share/fonts/opentype/inter/Inter-SemiBold.otf"],
                "Lora Bold Italic": ["/usr/share/fonts/truetype/google-fonts/Lora-Italic-Variable.ttf"]}
@@ -172,7 +216,10 @@ def _pick(names, download):
         try:
             if p and m.has_cyrillic(p):
                 fam, style = ImageFont.truetype(str(p), 20).getname()
-                return fam, p, int("Bold" in (style or "")), int("Italic" in (style or ""))
+                style = style or "Regular"
+                if style not in ("Regular", "Bold", "Italic", "Bold Italic"):   # Black Italic, ExtraBold…: по полному имени,
+                    return f"{fam} {style}", p, 0, 0                          # иначе монтаж берёт обычное начертание
+                return fam, p, int("Bold" in style), int("Italic" in style)
         except Exception:
             continue
     return None
@@ -200,7 +247,12 @@ def add_hook_font(files):
 
 
 def hook_font(download=True, custom=None):
-    """Шрифт крючка: свой (если выбран и в нём есть русские буквы), иначе Corsiva / похожий курсив."""
+    """Шрифт крючка: из пула («pool:Имя»), свой (если выбран и в нём есть русские буквы), иначе Corsiva / похожий курсив."""
+    if custom and str(custom).startswith("pool:"):
+        got = _pick([str(custom)[5:]], download)
+        if got:
+            return got
+        custom = None
     if custom:
         p = m.FONT_DIR / custom
         try:
@@ -213,8 +265,10 @@ def hook_font(download=True, custom=None):
     return _pick(HOOK_FONTS, download) or ("Georgia", None, 1, 1)
 
 
-def sub_font(download=True):
-    return _pick(SUB_FONTS, download) or ("Arial", None, 1, 0)
+def sub_font(download=True, custom=None):
+    """Шрифт субтитров Мурчика: выбранный из пула или Inter/Montserrat по умолчанию."""
+    names = ([custom] if custom and custom in WEB_FONTS else []) + SUB_FONTS
+    return _pick(names, download) or ("Arial", None, 1, 0)
 
 
 def text_width(path, size, text):
@@ -895,7 +949,8 @@ def _clean(t):
     return re.sub(r"^[«»\"'(\[]+|[.,!?;:…»\"')\]]+$", "", t).strip() or t.strip()
 
 
-def write_ass(path, hook, hook_end, rest, accents, hook_face, subf, palette="red_white", st=None, title="", total=0.0):
+def write_ass(path, hook, hook_end, rest, accents, hook_face, subf, palette="red_white", st=None, title="", total=0.0,
+              title_face=None, title_color=None):
     """hook: [{"t", "s"}] — главные слова и момент появления; rest: обычные субтитры (идут после крючка).
     st: стиль монтажа (resolve_style), title: заголовок для начала «ч/б + заголовок» или «тема сверху»."""
     st = st or resolve_style({"mstyle": "valdemar"}, "x")
@@ -952,7 +1007,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # слой 0: густая тёмная дымка под словом (читается на любом фоне), слой 1: само слово, яркое, с тёмной кромкой
             ev.append(f"Dialogue: 0,{_t(t0)},{_t(hook_end)},Hook,,0,0,0,,{{{base}\\1a&HFF&\\bord34\\blur30\\3c&H000000&}}{body('&H0C&')}")
             ev.append(f"Dialogue: 1,{_t(t0)},{_t(hook_end)},Hook,,0,0,0,,{{{base}\\1c{col}\\bord2\\blur0.8\\3c{dark}}}{body(None)}")
-    if title and st["intro"] in ("bw_title", "top_title"):
+    if title and st["intro"] == "user_title":
+        ev += user_title_events(title, st, total, title_face or hook_face, title_color)
+    elif title and st["intro"] in ("bw_title", "top_title"):
         ev += title_events(title, st, total)
     if st["subs"] == "phrase":
         ev += phrase_events(rest, accents, st)
@@ -1007,6 +1064,39 @@ def title_events(title, st, total):
     col = YELLOW if yellow else WHITE
     return [f"Dialogue: 2,{_t(0)},{_t(end)},Title,,0,0,0,,{{\\an8\\pos({W // 2},{st['title_y']})\\fs{size}\\1c{col}"
             f"\\bord4\\3c&H000000&\\shad2\\4c&H000000&\\fad(0,200)}}{text}"]
+
+
+TITLE_HOLD, TITLE_FADE = 5.0, 1.2                  # свой заголовок: висит 5 с, потом плавно растворяется за 1.2 с
+
+
+def user_title_events(title, st, total, hook_face, color=None):
+    """Свой заголовок своим шрифтом и цветом: сверху (над окном или в верхней части экрана), в 1–2 строки,
+    плавно появляется, висит TITLE_HOLD секунд и медленно растворяется. Под ним тёмная дымка — читается на любом фоне."""
+    hname = hook_face[0]
+    col = WHITE
+    if color and re.fullmatch(r"#?[0-9a-fA-F]{6}", str(color)):
+        h = str(color).lstrip("#")
+        col = "&H" + (h[4:6] + h[2:4] + h[0:2]).upper() + "&"              # ASS: порядок BGR
+    words = [x for x in re.split(r"\s+", title.strip()) if x][:12]
+    if not words:
+        return []
+    raw = " ".join(words)
+    if len(raw) > 18 and len(words) > 1:               # длинный — в две строки, поровну
+        best = min(range(1, len(words)), key=lambda i: abs(len(" ".join(words[:i])) - len(raw) / 2))
+        lines = [" ".join(words[:best]), " ".join(words[best:])]
+    else:
+        lines = [raw]
+    longest = max(len(x) for x in lines)
+    size = 92 if longest <= 14 else max(54, int(92 * 14 / longest))
+    text = r"\N".join(lines)
+    # над окном (на чёрном), чтобы не закрывать лицо; во весь экран — в верхней части
+    y = 250 if st["frame"] == "full" else max(120, st["fy"] - len(lines) * int(size * 1.18) - 26)
+    end = min(total, TITLE_HOLD + TITLE_FADE)
+    fade = rf"\fad(300,{int(TITLE_FADE * 1000)})"
+    fl = rf"\b{1 if hook_face[2] else 0}\i{1 if hook_face[3] else 0}"   # жирность/курсив файла — иначе libass берёт обычный
+    base = rf"\an8\pos({W // 2},{y})\fn{hname}{fl}\fs{size}{fade}"
+    return [f"Dialogue: 3,{_t(0)},{_t(end)},Title,,0,0,0,,{{{base}\\1a&HFF&\\bord30\\blur26\\3c&H000000&\\3a&H30&}}{text}",
+            f"Dialogue: 4,{_t(0)},{_t(end)},Title,,0,0,0,,{{{base}\\1c{col}\\bord3\\blur0.6\\3c&H101010&\\shad0}}{text}"]
 
 
 def phrase_events(rest, accents, st):
@@ -1135,6 +1225,12 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
         title = (re.sub(r"^\[[^\]]*\]\s*", "", str(o.get("story_title") or "")) if st["intro"] == "top_title" else "") \
             or " ".join(texts)
         hook, hook_end = [], 0.0
+    if o.get("head_mode") == "title":            # вместо главных слов — свой заголовок: ~5 с сверху, плавно исчезает
+        st = dict(st, intro="user_title")
+        title = str(o.get("head_title") or "").strip() \
+            or re.sub(r"^\[[^\]]*\]\s*", "", str(o.get("story_title") or "")).strip() or " ".join(texts)
+        hook, hook_end = [], 0.0
+        say(f"заголовок: {title}")
     rest = [w for w in tw if w["s"] >= hook_end - 0.05]     # пока висят главные слова, обычных субтитров нет
     acc_all = ai_accents(tw, cfg) if o["accents"] else set()
     first = len(tw) - len(rest)
@@ -1144,8 +1240,9 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
     ass = m.CACHE / f"blog_{tag}.ass"
     hf = hook_font(custom=o.get("hook_font"))
     say(f"шрифт крючка: {hf[0]}")
-    write_ass(ass, hook, hook_end, rest, acc, hf, sub_font(), o.get("hook_palette") or "red_white", st=st, title=title,
-              total=total)
+    write_ass(ass, hook, hook_end, rest, acc, hf, sub_font(custom=o.get("sub_font")), o.get("hook_palette") or "red_white", st=st, title=title,
+              total=total, title_face=hook_font(custom=o.get("title_font")) if o.get("title_font") else None,
+              title_color=o.get("title_color"))
     fw, fh, fr = st["fw"], st["fh"], max(2, st["fr"])
     mask = m.CACHE / f"blog_mask_{fw}x{fh}_{fr}.png"
     if not mask.exists():

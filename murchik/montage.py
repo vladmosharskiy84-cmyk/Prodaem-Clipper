@@ -1970,6 +1970,22 @@ FONT_LIB = {"Montserrat Black": ("Montserrat", 900), "Montserrat ExtraBold": ("M
             "Manrope ExtraBold": ("Manrope", 800), "Anton": ("Anton", 400), "Comfortaa Bold": ("Comfortaa", 700),
             "Ubuntu Bold": ("Ubuntu", 700), "Lobster": ("Lobster", 400), "Pacifico": ("Pacifico", 400),
             "Press Start 2P": ("Press Start 2P", 400)}
+# пул 15.11: заглавные и субтитры (бесплатные, с кириллицей) — те же, что в Мурчике (blogger.FONT_POOL_*), без курсивов
+FONT_LIB.update({
+    "Dela Gothic One": ("Dela Gothic One", 400), "Rubik Mono One": ("Rubik Mono One", 400), "Days One": ("Days One", 400),
+    "Seymour One": ("Seymour One", 400), "Tektur Black": ("Tektur", 900),
+    "Sofia Sans Extra Condensed Black": ("Sofia Sans Extra Condensed", 900), "Alumni Sans Black": ("Alumni Sans", 900),
+    "Roboto Condensed Black": ("Roboto Condensed", 900), "Yeseva One": ("Yeseva One", 400), "Prata": ("Prata", 400),
+    "Marck Script": ("Marck Script", 400), "Caveat Bold": ("Caveat", 700), "Great Vibes": ("Great Vibes", 400),
+    "Bad Script": ("Bad Script", 400), "Amatic SC Bold": ("Amatic SC", 700), "Rubik Wet Paint": ("Rubik Wet Paint", 400),
+    "Rubik Spray Paint": ("Rubik Spray Paint", 400), "Rubik Glitch": ("Rubik Glitch", 400), "Rubik Burned": ("Rubik Burned", 400),
+    "Rubik Doodle Shadow": ("Rubik Doodle Shadow", 400), "Rampart One": ("Rampart One", 400),
+    "Pixelify Sans Bold": ("Pixelify Sans", 700), "Stalinist One": ("Stalinist One", 400),
+    "Montserrat Bold": ("Montserrat", 700), "Inter SemiBold": ("Inter", 600), "Golos Text Bold": ("Golos Text", 700),
+    "Onest Bold": ("Onest", 700), "Nunito Black": ("Nunito", 900), "Geologica Black": ("Geologica", 900),
+    "Commissioner Black": ("Commissioner", 900), "Exo 2 Bold": ("Exo 2", 700), "Raleway Black": ("Raleway", 900),
+    "Jost Bold": ("Jost", 700), "Roboto Condensed Bold": ("Roboto Condensed", 700),
+    "Sofia Sans Condensed Black": ("Sofia Sans Condensed", 900)})
 FONT_DIR = BASE / "fonts"
 FONT_MAP = BASE / "fonts_map.json"            # имя в программе -> имя шрифта внутри файла (не в папке fonts:
                                               # оттуда ffmpeg читает только сами шрифты)

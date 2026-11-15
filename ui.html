@@ -220,6 +220,9 @@ input[type=range]{flex:1;accent-color:var(--a1);min-width:140px}
 .dlg h3{font:700 18px var(--display);margin:0 0 4px;letter-spacing:.02em}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;align-self:center;width:max-content}
 .seg button{border:0;background:none;color:var(--mut);font:600 12.5px var(--body);padding:7px 14px;cursor:pointer}.seg button.on{color:#fff;background:linear-gradient(110deg,var(--a1),var(--a2))}
+.tcols{display:flex;gap:6px}.tcols button{width:26px;height:26px;border-radius:8px;border:2px solid var(--line);cursor:pointer;padding:0}
+.tcols button.on{border-color:#fff;box-shadow:0 0 0 2px var(--a1)}
+.tprev{padding:6px 12px;border-radius:10px;background:#111;font-size:18px;text-shadow:0 0 8px #000,0 0 3px #000;white-space:nowrap;max-width:320px;overflow:hidden;text-overflow:ellipsis}
 .lookbtn em{font-style:normal;color:var(--mut);font-weight:500}
 .field.locked{opacity:.45;pointer-events:none}
 .dlg.lib{width:min(1100px,100%);padding:0;overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 40px)}
@@ -729,8 +732,9 @@ document.addEventListener("keydown",e=>{if($(".modal"))return;if(e.code==="Space
 function fontCss(v){const L=S.init.font_lib||{};if(!v)return"";const f=L[v];
   return f?` style="font-family:'${f[0]}',var(--body);font-weight:${f[1]};font-size:15px"`:` style="font-family:'${v}',var(--body);font-size:15px"`;}
 function loadFontPreviews(){const L=S.init.font_lib||{};const fam={};Object.values(L).forEach(([f,w])=>{(fam[f]=fam[f]||new Set()).add(w)});
-  const q=Object.entries(fam).map(([f,ws])=>"family="+f.replace(/ /g,"+")+(([...ws].some(w=>w!==400))?":wght@"+[...ws].sort().join(";"):"")).join("&");
-  const l=document.createElement("link");l.rel="stylesheet";l.href="https://fonts.googleapis.com/css2?"+q+"&display=swap&text="+encodeURIComponent("АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюяABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ·");document.head.appendChild(l);}
+  const txt=encodeURIComponent("АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюяABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ·");
+  Object.entries(fam).forEach(([f,ws])=>{const l=document.createElement("link");l.rel="stylesheet";   /* по ссылке на шрифт: сбой одного не ломает остальные */
+    l.href="https://fonts.googleapis.com/css2?family="+f.replace(/ /g,"+")+(([...ws].some(w=>w!==400))?":wght@"+[...ws].sort((a,b)=>a-b).join(";"):"")+"&display=swap&text="+txt;document.head.appendChild(l);});}
 function optList(k){if(k==="style")return S.init.styles;if(k==="anim")return S.init.anims;if(k==="font")return[["","Как в настройках"],...S.init.fonts.map(f=>[f,f])];
   const b=S.init.banners;return b.length?b.map(x=>[x.name,x.name+" · "+(+x.speed).toFixed(2).replace(/\.?0+$/,"")+"x"+(x.fade?", прозрачность "+x.fade+"%":"")]):[["","нет баннеров"]];}
 function buildMenus(){$$(".field").forEach(f=>{const k=f.dataset.k,m=f.querySelector(".menu");
@@ -1297,10 +1301,18 @@ async function blogMode(){
   const sec=document.createElement("div");sec.className="blogset";
   sec.innerHTML=`<div><p class="label">Стиль монтажа <span class="note">«Свой у каждого» — у друзей те же видео выйдут по-другому</span></p>
       <button class="sel lookbtn" id="bl_msbtn" type="button"></button><input type="hidden" id="bl_ms"></div>
-    <div><p class="label">Главные слова (первые 3–4 слова ролика) <span class="note" id="bl_sugg"></span></p>
+    <div><div class="flex" style="align-items:center;gap:12px;margin-bottom:8px"><p class="label" style="margin:0">Начало ролика</p>
+        <div class="seg" id="bl_hm"><button data-v="words">Главные слова</button><button data-v="title">Заголовок</button></div></div>
+      <div id="bl_hw"><p class="note" style="margin:0 0 6px;text-align:left">Первые 3–4 слова лесенкой, каждое со щелчком <span id="bl_sugg"></span></p>
       <div class="flex"><input class="inp" id="bl_ht" placeholder="Например: Бокс Спорт Связи. Пусто — возьмутся первые сказанные слова" autocomplete="off" style="flex:1">
         <select class="inp" id="bl_case" style="height:42px;width:auto"><option value="title">С большой буквы</option><option value="caps">ЗАГЛАВНЫМИ</option><option value="as_is">как вписал</option></select>
         <select class="inp" id="bl_pal" style="height:42px;width:auto"><option value="red_white">красный / белый</option><option value="red">только красный</option><option value="red_yellow">красный / жёлтый</option></select></div></div>
+      <div id="bl_htw" hidden><p class="note" style="margin:0 0 6px;text-align:left">Заголовок сверху: висит ~5 секунд и плавно растворяется</p>
+        <input class="inp" id="bl_tt" placeholder="Например: Как я потерял первый миллион. Пусто — возьмётся тема истории от Claude" autocomplete="off">
+        <div class="flex" style="flex-wrap:wrap;gap:10px;margin-top:8px;align-items:center">
+          <label class="note" style="display:flex;gap:8px;align-items:center">Шрифт <select class="inp" id="bl_tf" style="height:36px;width:auto;max-width:260px"></select></label>
+          <span class="note">Цвет</span><div class="tcols" id="bl_tc"></div><input type="color" id="bl_tcc" title="Свой цвет" style="width:34px;height:30px;border:0;background:none;cursor:pointer">
+          <span class="tprev" id="bl_tp">Как я потерял первые деньги</span></div></div></div>
     <div class="bgrid2">
       <div><p class="label">Музыка</p><div class="flex"><select class="inp" id="bl_mus"></select><button class="btn sm" id="bl_addm" title="Добавить музыку">+</button><button class="btn sm" id="bl_openm" title="Папка с музыкой">📁</button></div>
         <p class="label" style="margin-top:10px">Громкость музыки <span id="bl_dbv" class="note"></span></p><input type="range" id="bl_db" min="-32" max="-8" step="1" style="width:100%"></div>
@@ -1308,7 +1320,8 @@ async function blogMode(){
         <p class="label" style="margin-top:10px">Громкость щелчков <span id="bl_cvv" class="note"></span></p><input type="range" id="bl_cv" min="0" max="150" step="5" style="width:100%"></div>
     </div>
     <div class="flex" style="flex-wrap:wrap;gap:14px">
-      <label class="note" style="display:flex;gap:8px;align-items:center">Шрифт главных слов <select class="inp" id="bl_hf" style="height:36px;width:auto;max-width:240px"></select><button class="btn sm" id="bl_addf">+ шрифт</button></label>
+      <label class="note" style="display:flex;gap:8px;align-items:center">Шрифт главных слов <select class="inp" id="bl_hf" style="height:36px;width:auto;max-width:260px"></select><button class="btn sm" id="bl_addf">+ шрифт</button></label>
+      <label class="note" style="display:flex;gap:8px;align-items:center">Шрифт субтитров <select class="inp" id="bl_sf" style="height:36px;width:auto;max-width:240px"></select></label>
       <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="bl_fill"> вырезать «э», «мм», паразиты</label>
       <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="bl_tg"> в Telegram</label>
       ${r0.owner?`<label class="note" style="display:flex;gap:8px;align-items:center" title="Только у тебя: стрельбу и движ без слов не вырезает, кадр держится на лицах, истории ищутся под влоги (экшн, угар, развязка)"><input type="checkbox" id="bl_vlog"> <b>влог / экшн</b> (только у тебя)</label>`:""}</div>`;
@@ -1318,11 +1331,34 @@ async function blogMode(){
   const fillMus=(list,sel)=>{q("#bl_mus").innerHTML=`<option value="">Без музыки</option>`+list.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("");
     q("#bl_mus").value=(sel!=null&&list.includes(sel))?sel:(sel===""?"":(list[0]||""));};
   const fillSnd=(list,sel)=>{q("#bl_ck").innerHTML=list.map(([k,v])=>`<option value="${esc(k)}">${esc(v)}</option>`).join("");q("#bl_ck").value=list.some(x=>x[0]===sel)?sel:"mouse";};
-  const fillF=(list,sel)=>{q("#bl_hf").innerHTML=`<option value="">${esc(r0.hook_font)}</option>`+list.map(n=>`<option value="${esc(n)}">${esc(n.replace(/^hook_user_/,"").replace(/\.(ttf|otf)$/i,""))}</option>`).join("");
-    q("#bl_hf").value=list.includes(sel)?sel:"";};
+  /* пул шрифтов: каждый пункт написан своим шрифтом (веб-шрифты грузятся по одному, чтобы сбой одного не ломал остальные) */
+  const FP=r0.font_pool||{title:[],sub:[]},fst=f=>`font-family:'${f.family}',var(--body);font-weight:${f.weight};${f.italic?"font-style:italic;":""}font-size:15px`;
+  const famW={};[...FP.title,...FP.sub].forEach(f=>{const k=f.family;(famW[k]=famW[k]||new Set()).add((f.italic?"1,":"0,")+f.weight)});
+  Object.entries(famW).forEach(([fam,ws])=>{const it=[...ws].some(x=>x[0]==="1");const l=document.createElement("link");l.rel="stylesheet";
+    l.href="https://fonts.googleapis.com/css2?family="+fam.replace(/ /g,"+")+(it?":ital,wght@"+[...ws].sort().join(";"):":wght@"+[...ws].map(x=>x.slice(2)).sort().join(";"))+"&display=swap";document.head.appendChild(l);});
+  const grp=list=>{const g={};list.forEach(f=>(g[f.group]=g[f.group]||[]).push(f));return g};
+  const fillF=(list,sel)=>{q("#bl_hf").innerHTML=`<option value="">${esc(r0.hook_font)} (по умолчанию)</option>`
+      +Object.entries(grp(FP.title)).map(([g,fs])=>`<optgroup label="${esc(g)}">${fs.map(f=>`<option value="pool:${esc(f.name)}" style="${fst(f)}">${esc(f.name)}</option>`).join("")}</optgroup>`).join("")
+      +(list.length?`<optgroup label="Свои шрифты">${list.map(n=>`<option value="${esc(n)}">${esc(n.replace(/^hook_user_/,"").replace(/\.(ttf|otf)$/i,""))}</option>`).join("")}</optgroup>`:"");
+    q("#bl_hf").value=(list.includes(sel)||FP.title.some(f=>"pool:"+f.name===sel))?sel:"";};
+  q("#bl_sf").innerHTML=`<option value="">${esc(r0.sub_font||"Inter")} (по умолчанию)</option>`+FP.sub.map(f=>`<option value="${esc(f.name)}" style="${fst(f)}">${esc(f.name)}</option>`).join("");
+  q("#bl_sf").value=FP.sub.some(f=>f.name===sv.sub_font)?sv.sub_font:"";
   fillF(r0.hook_fonts||[],sv.hook_font||"");fillMus(r0.music||[],sv.music??null);fillSnd(r0.sounds||[],sv.click||"mouse");
   q("#bl_db").value=sv.music_db??-20;q("#bl_cv").value=sv.click_vol??70;q("#bl_case").value=sv.hook_case||"title";q("#bl_pal").value=sv.hook_palette||"red_white";
   q("#bl_fill").checked=sv.cut_fillers!==false;q("#bl_tg").checked=sv.tg!==false;if(q("#bl_vlog"))q("#bl_vlog").checked=!!sv.vlog;
+  /* начало ролика: главные слова лесенкой или свой заголовок (5 с, плавно исчезает) */
+  const headUI=v=>{S.headMode=v;q("#bl_hm").querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));
+    q("#bl_hw").hidden=v==="title";q("#bl_htw").hidden=v!=="title";};
+  headUI(sv.head_mode==="title"?"title":"words");q("#bl_hm").onclick=e=>{const b=e.target.closest("button");if(b)headUI(b.dataset.v)};
+  /* шрифт и цвет заголовка: пул заглавных, превью сразу */
+  q("#bl_tf").innerHTML=`<option value="">как шрифт главных слов</option>`+Object.entries(grp(FP.title)).map(([g,fs])=>`<optgroup label="${esc(g)}">${fs.map(f=>`<option value="pool:${esc(f.name)}" style="${fst(f)}">${esc(f.name)}</option>`).join("")}</optgroup>`).join("");
+  q("#bl_tf").value=FP.title.some(f=>"pool:"+f.name===sv.title_font)?sv.title_font:"";
+  const TCOLS=["#FFFFFF","#FFDC00","#FF2B2B","#4FD8FF","#FF4FD8","#5CFF6A"];S.titleColor=sv.title_color||"#FFFFFF";
+  q("#bl_tc").innerHTML=TCOLS.map(c=>`<button data-c="${c}" style="background:${c}" title="${c}"></button>`).join("");
+  const tprev=()=>{const p=q("#bl_tp"),f=FP.title.find(x=>"pool:"+x.name===q("#bl_tf").value);p.style.cssText=f?fst(f).replace("font-size:15px","font-size:18px"):"";p.style.color=S.titleColor;
+    p.textContent=q("#bl_tt").value.trim()||"Как я потерял первые деньги";q("#bl_tc").querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.c===S.titleColor));q("#bl_tcc").value=S.titleColor;};
+  q("#bl_tc").onclick=e=>{const b=e.target.closest("button");if(b){S.titleColor=b.dataset.c;tprev()}};
+  q("#bl_tcc").oninput=e=>{S.titleColor=e.target.value.toUpperCase();tprev()};q("#bl_tf").onchange=tprev;q("#bl_tt").oninput=tprev;tprev();
   const msUI=k=>{q("#bl_ms").value=k;const s=(r0.mstyles||[]).find(x=>x.key===k);
     q("#bl_msbtn").innerHTML=s?`${esc(s.name)} <em>· ${MS_DESC(s)}</em>`:`Свой у каждого <em>· на каждом ПК и видео свой стиль — у друзей выйдет по-другому</em>`;};
   msUI(sv.mstyle||"mine");q("#bl_msbtn").onclick=async e=>{e.stopPropagation();
@@ -1331,7 +1367,8 @@ async function blogMode(){
   const lab=()=>{q("#bl_dbv").textContent=q("#bl_db").value+" дБ";q("#bl_cvv").textContent=q("#bl_cv").value+"%";};lab();q("#bl_db").oninput=lab;q("#bl_cv").oninput=lab;
   const opts=()=>({music:q("#bl_mus").value||null,music_db:+q("#bl_db").value,click:q("#bl_ck").value,click_vol:+q("#bl_cv").value,
     hook_font:q("#bl_hf").value||null,hook_text:q("#bl_ht").value.trim(),hook_case:q("#bl_case").value,hook_palette:q("#bl_pal").value,
-    cut_fillers:q("#bl_fill").checked,tg:q("#bl_tg").checked,bw:true,cut_pauses:true,mstyle:q("#bl_ms").value||"mine",vlog:!!(q("#bl_vlog")&&q("#bl_vlog").checked)});
+    cut_fillers:q("#bl_fill").checked,tg:q("#bl_tg").checked,bw:true,cut_pauses:true,mstyle:q("#bl_ms").value||"mine",vlog:!!(q("#bl_vlog")&&q("#bl_vlog").checked),sub_font:q("#bl_sf").value||null,
+    head_mode:S.headMode||"words",head_title:q("#bl_tt").value.trim(),title_font:q("#bl_tf").value||null,title_color:S.titleColor||"#FFFFFF"});
   q("#bl_addf").onclick=async()=>{const r=await api("blog",{act:"add_font"});if(!r.added)return;
     if(!r.cyr){toast("В этом шрифте нет русских букв — им не написать по-русски. Нужна версия с кириллицей.",false);fillF(r.fonts,q("#bl_hf").value);return}
     fillF(r.fonts,r.added);toast("Шрифт добавлен");};
@@ -1348,6 +1385,8 @@ async function blogMode(){
   schedulePreview=()=>{};                           /* пример кадра с баннером здесь не нужен */
   const orig=openClip;openClip=async id=>{await orig(id);if(S.cur!==id)return;const c=await api("blog",{act:"clip_info",id});
     const w=(c.hook_words||[]).join(" ");q("#bl_ht").value=w;q("#bl_sugg").textContent=w?"· Claude предложил, можно поменять":"";
+    const tt=String(c.title||"").replace(/^\[[^\]]*\]\s*/,"");q("#bl_tt").value="";   /* заголовок: тема от Claude — подсказкой */
+    q("#bl_tt").placeholder=tt?`Пусто — будет «${tt}». Можно вписать свой`:"Например: Как я потерял первый миллион";
     hint(c.reason?"Почему этот момент: "+c.reason:"");};
   /* добавление видео */
   const start=async(body)=>{const r=await api("blog",Object.assign({act:"start"},body,{stories:+(sv.stories||10),story_len:sv.story_len||"short",vlog:!!(q("#bl_vlog")&&q("#bl_vlog").checked)}));
