@@ -1,7 +1,7 @@
 {
-  "version": "2026.11.15 19:02",
-  "time": 1794762169.7803626,
-  "notes": "Баннер не меньше 25% экрана; стили с понятными названиями; отчёты админу только в приложении МУРЧИК",
+  "version": "2026.11.15 19:06",
+  "time": 1794762372.6857147,
+  "notes": "Настройки: убран лишний раздел про темы клипов, исправлено сохранение ключей",
   "files": {
     "montage.py": "e9b19d647a29bcecc2cbbe42283f5daa31cf2b8c0b9bc3235d1fa79c916453a0",
     "review.py": "d467c90b91e88e43df7b517245648bc91dcc1ecbecfbaf131a32eea3bb235e21",
@@ -10,14 +10,14 @@
     "clipfinder.py": "cfc0f40ec627eb3086312eb62b499e6382b78c8068702bd18dca40ed5d150645",
     "updater.py": "e8f41dc517c76f8c4df2c3c0f53cdd275a0a3fcd8aa7ba7bb6bc669c1bdc28c1",
     "webapp.py": "0694c28f3b3b5c4988e9f33e04b5d71b62cebc2730a0b494a8c44cbc8c08ea20",
-    "ui.html": "5bc742784a7097999ef00e4ff686d5858f99417d31fdd7c6b787a4fcd7bbf7c1",
+    "ui.html": "4b161f0c4bd7abc1cf2199e64e7fe6fc05460d6b4ec9c8266a46b1c9c04c9c45",
     "logo_src.png": "e43b51bb73da86652be2c2adac971e5b39557d895d84a4c2449e9b99f95c1739",
     "highlights.py": "1e9b6942cfbc2de55466c191e0d50fe8db23d159e5ae78d98fcb826623e5091d",
     "accounts.py": "2e6681ac80f17dfcdb5983d0bc62011f27b2b2003bf6d5ad4117e5d68dc0f80c",
     "agents.py": "08803606e98c469d892fcde27d0a095b57f5753ccd4c426ba7cb1afaf53a44d3",
     "leaders.py": "06951d301f174cb68aed842807048974977038e49ae9439738ac155ab69a7dc1",
     "tgbot.py": "47b81efff03c52593fdf1a4f16058ed3f3be3d021a5cf60ff472b318b7db40bd",
-    "blogger.py": "34fba44e2df644b4693e794a3ae867385b6b93d484422bb029817973fac405d3",
+    "blogger.py": "add737345c2af710877f8637100ca8330b72fb4a240b6d75912ec7acadef6233",
     "reaction.py": "6080db0aad9baaee2c5a5c9d5485976f34a039b266297b22a4181b9da6152dab",
     "ms_frame.jpg": "8feed06044da01bbf185516de08c2ee2d622d6565eb5c93c76ba8f5fe3b77230",
     "report.py": "297f287d86e3679cda8f28b9ec89e6b8196a3efc85732e54d2d72fbc7eccb69f"

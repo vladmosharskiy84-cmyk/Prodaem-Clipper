@@ -986,6 +986,7 @@ async function openSettings(){const v=await api("settings",{act:"get"});
     if(r.error){db.disabled=false;db.textContent="Создать вкладку DOTA";return toast(r.error,false)}
     if(!r.banner)alert("Вкладка DOTA создана. Добавь баннер оффера для доты: «Баннер оффера» → «Баннеры офферов…».");location.href=r.url;};
   if(S.init&&S.init.no_tg){const tg=w.querySelector("#s_tg");if(tg)tg.closest(".sect").remove();const tp=w.querySelector("#s_topics");if(tp)tp.closest(".sect").remove();}
+  if(S.init&&S.init.mode==="blogger"){const tp=w.querySelector("#s_topics");if(tp)tp.closest(".sect").remove();}   /* темы клипов Мурчику не нужны */
   if(S.init&&S.init.mode!=="blogger"&&!S.init.profile){(async()=>{const t=await api("settings",{act:"tabs"});if(!(t.tabs||[]).length)return;
     const box=document.createElement("div");box.className="sect";box.innerHTML=`<h4>Вкладки профилей</h4><p>Сними галочку, и вкладка пропадёт, а профиль перестанет работать в фоне. Все его данные остаются в папке, вернуть можно здесь же.</p>`+
       t.tabs.map(x=>`<label class="note" style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" data-tab="${esc(x.key)}" ${x.shown?"checked":""}> ${esc(x.label)}</label>`).join("");
@@ -1041,7 +1042,7 @@ async function openSettings(){const v=await api("settings",{act:"get"});
   w.querySelector("#s_topics").onclick=async()=>{const res=w.querySelector("#r_topics");const tok=w.querySelector("#s_tg").value.trim();
     if(!tok){res.className="res bad";res.textContent="сначала вставь токен бота";return}res.className="res";res.innerHTML='<span class="spin"></span>';
     await api("settings",{act:"tg",tg:tok});const r=await api("tg_topics");res.className="res "+(r.ok?"ok":"bad");res.textContent=r.text||r.error;};
-  w.querySelector("#s_save").onclick=async()=>{const g=k=>w.querySelector("#s_"+k).value.trim();const r=await api("settings",{act:"save",cid:g("cid"),sec:g("sec"),claude:g("claude"),tg:g("tg")});
+  w.querySelector("#s_save").onclick=async()=>{const g=k=>((w.querySelector("#s_"+k)||{}).value||"").trim();   /* у Мурчика полей Twitch нет */const r=await api("settings",{act:"save",cid:g("cid"),sec:g("sec"),claude:g("claude"),tg:g("tg")});
     if(r.error){w.querySelector("#s_msg").textContent=r.error;return}w.close();};}
 
 /* нарезка стрима */
