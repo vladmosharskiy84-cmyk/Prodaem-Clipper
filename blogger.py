@@ -480,6 +480,104 @@ def _energy(src):
     return np.sqrt((a[:n * k].reshape(n, k) ** 2).mean(axis=1)) if n else None
 
 
+# ---------- влог / экшн (только у владельца: файл owner.txt рядом с программой, в обновления не попадает) ----------
+OWNER = (Path(__file__).resolve().parent / "owner.txt").exists()
+
+
+def _motion(src, fps=5):
+    """Сколько меняется картинка: средняя разница соседних кадров (маленьких, серых) — fps раз в секунду."""
+    import numpy as np
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(src), "-an", "-vf", f"fps={fps},scale=64:36,format=gray",
+                          "-f", "rawvideo", "-"], capture_output=True, creationflags=NOWIN).stdout
+    a = np.frombuffer(raw, dtype=np.uint8)
+    n = a.size // (64 * 36)
+    if n < 2:
+        return None
+    f = a[:n * 64 * 36].reshape(n, 36, 64).astype(np.float32)
+    return np.concatenate([[0.0], np.abs(np.diff(f, axis=0)).mean(axis=(1, 2))])
+
+
+def add_action(segs, src, dur, say=print, max_keep=6.0):
+    """Экшн-режим: между словами не выкидываем куски, где громко (стрельба, крики, взрывы) или много движения
+    (беготня, штурм). Вырезаются только тихие и неподвижные паузы. Длинный экшн — самые активные max_keep секунд."""
+    import numpy as np
+    en, mo = _energy(src), _motion(src)
+    if en is None or not segs:
+        return segs
+    speech = np.concatenate([en[int(a * 100):int(b * 100)] for a, b in segs]) if segs else en
+    loud_ref = float(np.median(speech)) if speech.size else float(np.median(en))
+    mo_ref = float(np.median(mo)) if mo is not None and mo.size else 0.0
+    gaps = [(0.0, segs[0][0])] + [(segs[i][1], segs[i + 1][0]) for i in range(len(segs) - 1)] + [(segs[-1][1], dur)]
+    extra = []
+    for a, b in gaps:
+        if b - a < 0.3:
+            continue
+        step = 0.5                                  # смотрим окнами по полсекунды: какие из них «живые»
+        live = []
+        t = a
+        while t < b - 0.1:
+            e = en[int(t * 100):int(min(b, t + step) * 100)]
+            mv = mo[int(t * 5):int(min(b, t + step) * 5) + 1] if mo is not None else np.array([0.0])
+            loud = e.size and float(np.percentile(e, 90)) > 0.6 * loud_ref
+            moving = mv.size and mo_ref > 0 and float(mv.mean()) > 1.4 * mo_ref
+            live.append((t, min(b, t + step), bool(loud or moving), float(e.mean()) if e.size else 0.0))
+            t += step
+        run = []                                    # подряд идущие живые окна — один кусок экшена
+        for w in live + [(b, b, False, 0.0)]:
+            if w[2]:
+                run.append(w)
+                continue
+            if run:
+                ra, rb = run[0][0], run[-1][1]
+                if rb - ra > max_keep:              # длинный — берём самые громкие max_keep секунд
+                    k = int(max_keep / step)
+                    best = max(range(len(run) - k + 1), key=lambda i: sum(x[3] for x in run[i:i + k]))
+                    ra, rb = run[best][0], run[best + k - 1][1]
+                extra.append((ra, rb))
+                run = []
+    if not extra:
+        return segs
+    out = sorted(segs + extra)
+    merged = [list(out[0])]
+    for a, b in out[1:]:
+        if a - merged[-1][1] < 0.06:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    say(f"экшн: оставил {sum(b - a for a, b in extra):.1f} с без слов (стрельба, движение)")
+    return [(a, b) for a, b in merged]
+
+
+def face_centers(src, segs, sw, sh):
+    """Где люди в кадре: для каждого куска — середина лиц по горизонтали (доля ширины), чтобы окно держалось на них.
+    Нет лиц — как в прошлом куске. Мелкие сдвиги игнорируем, чтобы кадр не дёргался."""
+    try:
+        import cv2
+    except ImportError:
+        return [0.5] * len(segs)
+    det = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    cap = cv2.VideoCapture(str(src))
+    out, last = [], 0.5
+    for a, b in segs:
+        xs, ws = [], []
+        for f in (0.25, 0.5, 0.75):
+            cap.set(cv2.CAP_PROP_POS_MSEC, (a + (b - a) * f) * 1000)
+            ok, img = cap.read()
+            if not ok:
+                continue
+            k = 640 / img.shape[1]
+            g = cv2.cvtColor(cv2.resize(img, (640, int(img.shape[0] * k))), cv2.COLOR_BGR2GRAY)
+            for (x, y, w, h) in det.detectMultiScale(g, 1.15, 5, minSize=(28, 28)):
+                xs.append((x + w / 2) / 640)
+                ws.append(w * h)
+        if xs:
+            c = sum(x * w for x, w in zip(xs, ws)) / sum(ws)
+            last = c if abs(c - last) > 0.06 else last
+        out.append(last)
+    cap.release()
+    return out
+
+
 def tight_segments(words, keep, dur, src, max_gap=0.22):
     """Куски видео только со словами, которые остаются. Режем там, где выкинуто слово или пауза длиннее max_gap,
     и точку реза сдвигаем в самое тихое место рядом, чтобы не съесть начало или конец слова."""
@@ -549,6 +647,29 @@ STORY_PROMPT = """Ниже расшифровка видео блогера с �
 {text}"""
 
 
+VLOG_PROMPT = """Ниже расшифровка ВЛОГА с отметками времени [секунды]: несколько людей, движ, игры, поездки, челленджи
+(например, страйкбол «блогеры против военных»). Большие промежутки между отметками без слов — это экшн: стрельба, беготня,
+штурм, драка, гонка. Найди {n} лучших отдельных моментов для TikTok/Reels, аудитория — парни. Что брать (в порядке важности):
+1) экшн с реакцией: что-то произошло (заход, выстрел, подрыв, проигрыш, победа) и люди орут, смеются, в шоке;
+2) угар: подколы, споры, «тебя подкупили», смешные правила и тупые вопросы, кто-то опозорился;
+3) развязка и счёт: кто победил, «в сухую», реванш, финальный штурм — с напряжением до и итогом после.
+Брифинги без шуток, долгие объяснения правил и пустой трёп не бери.
+
+Каждый момент — законченный кусок, понятный без остального видео, длиной {a}–{b} секунд: начинается с действия или
+цепляющей фразы, заканчивается реакцией, панчем или итогом. Экшн без слов внутри момента — это хорошо, не обрывай его.
+Моменты не пересекаются. Сначала самые сильные.
+
+Для каждого дай 3 главных слова — о чём момент, по одному слову, с большой буквы (пример: «Штурм», «Военные», «Позор»):
+они крупно встанут в начале ролика.
+
+Ответ ТОЛЬКО JSON-список:
+[{{"start": секунда начала, "end": секунда конца, "kind": "экшн|угар|развязка", "words": ["Слово", "Слово", "Слово"],
+  "title": "о чём, 3–6 слов", "why": "почему зайдёт, коротко", "score": 1-10}}]
+
+Расшифровка:
+{text}"""
+
+
 def _json_objects(out):
     """Список историй из ответа Claude, даже если JSON оборван или вокруг него текст: берём каждый целый {…}."""
     out = re.sub(r"```(?:json)?|```", "", out or "")
@@ -598,7 +719,7 @@ def _lines(words, step=14):
     return out
 
 
-def pick_stories(words, n, length, cfg, say=print):
+def pick_stories(words, n, length, cfg, say=print, vlog=False):
     key = m.KEY_FILE.read_text(encoding="utf-8-sig").strip() if m.KEY_FILE.exists() else ""
     if not key:
         raise Stop("чтобы находить лучшие истории в длинном видео, нужен ключ Claude (Настройки и ключи)")
@@ -618,7 +739,8 @@ def pick_stories(words, n, length, cfg, say=print):
         r = requests.post("https://api.anthropic.com/v1/messages",
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
                           json={"model": cfg.get("story_model") or cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 10000,
-                                "messages": [{"role": "user", "content": STORY_PROMPT.format(n=min(24, n * 3), a=a, b=b, text=chunk)}]},
+                                "messages": [{"role": "user", "content": (VLOG_PROMPT if vlog else STORY_PROMPT).format(
+                                    n=min(24, n * 3), a=a, b=b, text=chunk)}]},
                           timeout=240)
         if r.status_code != 200:
             raise Stop(f"Claude ответил {r.status_code}: {r.text[:200]}")
@@ -656,6 +778,8 @@ def pick_stories(words, n, length, cfg, say=print):
         e_ok = [w["e"] for w in ws if w["e"] <= e0 + 0.8] or [e0]
         s1 = max(0.0, min(s_ok) - 0.25)
         e1 = max(e_ok) + 0.4
+        if vlog:                                     # во влоге момент может начаться и кончиться экшеном без слов
+            s1, e1 = min(s1, max(0.0, s0)), max(e1, e0)
         ok.append({"start": s1, "end": e1, "words": [str(x) for x in (st.get("words") or [])][:4],
                    "title": (f"[{st['kind']}] " if st.get("kind") else "") + str(st.get("title", "")), "why": str(st.get("why", "")), "score": st.get("score")})
         if len(ok) >= n:
@@ -682,7 +806,7 @@ def long_find(src, cfg, opts=None, n=10, say=print, should_stop=None):
     if len(words) < 30:
         raise Stop("в видео почти нет речи: истории искать не в чем")
     say("ищу лучшие моменты…")
-    stories = pick_stories(words, int(n), o.get("story_len") or "short", cfg, say)
+    stories = pick_stories(words, int(n), o.get("story_len") or "short", cfg, say, vlog=bool(o.get("vlog")) and OWNER)
     if not stories:
         raise Stop("Claude не нашёл подходящих моментов, попробуй другую длину")
     raw_dir = BASE / "clips" / "raw" / "murchik"
@@ -730,7 +854,7 @@ def long_make(src, cfg, enc, opts=None, n=5, say=print, should_stop=None, on_rea
     if len(words) < 30:
         raise Stop("в видео почти нет речи: истории искать не в чем")
     say("ищу лучшие истории…")
-    stories = pick_stories(words, int(n), o.get("story_len") or "short", cfg, say)
+    stories = pick_stories(words, int(n), o.get("story_len") or "short", cfg, say, vlog=bool(o.get("vlog")) and OWNER)
     if not stories:
         raise Stop("Claude не нашёл подходящих историй, попробуй другую длину")
     say("нашёл историй: " + str(len(stories)) + " — " + "; ".join(f"{s['title']} ({s['end'] - s['start']:.0f} с)" for s in stories)[:300])
@@ -932,8 +1056,9 @@ def black_bars(src, dur):
     return w, h, x, y
 
 
-def card_crop(sw, sh, zoom=1.0, box=None, fw=CARD_W, fh=CARD_H):
-    """Кусок исходника под окно fw×fh: по ширине целиком, по высоте с запасом над головой."""
+def card_crop(sw, sh, zoom=1.0, box=None, fw=CARD_W, fh=CARD_H, cx=None):
+    """Кусок исходника под окно fw×fh: по ширине целиком, по высоте с запасом над головой.
+    cx: где по горизонтали держать окно (доля ширины, середина лиц); None — по центру."""
     bw, bh, bx, by = box or (sw, sh, 0, 0)
     ratio = fw / fh
     if bw / bh > ratio:
@@ -942,7 +1067,7 @@ def card_crop(sw, sh, zoom=1.0, box=None, fw=CARD_W, fh=CARD_H):
     else:
         cw = bw / zoom
         ch = cw / ratio
-    x = bx + (bw - cw) / 2
+    x = bx + (bw - cw) / 2 if cx is None else bx + max(0.0, min(bw - cw, cx * bw - cw / 2))
     y = by + max(0.0, min(bh - ch, (bh - ch) * 0.32))     # лицо обычно в верхней трети
     ev = lambda v: int(v) // 2 * 2
     return ev(cw), ev(ch), ev(x), ev(y)
@@ -973,6 +1098,9 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
         segs = [(0.0, dur)]
     words = m.ai_fix_words(words, src, cfg)
     segs = [(a, b) for a, b in segs if b - a > 0.08] or [(0.0, dur)]
+    vlog = bool(o.get("vlog")) and OWNER         # влог/экшн — только у владельца
+    if vlog and o["cut_pauses"]:                 # стрельбу и беготню без слов не выкидываем
+        segs = add_action(segs, src, dur, say)
     total = sum(b - a for a, b in segs)
     if o["cut_pauses"]:
         say(f"паузы вырезаны: {dur - total:.1f} с, кусков {len(segs)}")
@@ -1036,11 +1164,15 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
             since = 0.0
         zs.append(last_z)
         since += b - a
+    fcx = [None] * len(segs)
+    if vlog:                                         # окно держится на лицах, а не просто по центру
+        say("ищу людей в кадре…")
+        fcx = face_centers(src, segs, sw, sh)
     for i, (a, b) in enumerate(segs):                # каждый кусок: своя крупность плана (лёгкий «зум на стыке»)
         z = zs[i]
         # широкий кадр из горизонтального исходника: подходим ближе, чтобы человек не терялся в полосе
         bz = 1.9 if st["frame"] == "cinema" and sw / max(1, sh) > 1.2 else 1.0
-        cw, ch, cx, cy = card_crop(sw, sh, z * bz, box, fw, fh)
+        cw, ch, cx, cy = card_crop(sw, sh, z * bz, box, fw, fh, fcx[i])
         fc.append(f"[0:v]trim={a:.3f}:{b:.3f},setpts=PTS-STARTPTS,crop={cw}:{ch}:{cx}:{cy},"
                   f"scale={fw}:{fh}:flags=lanczos,fps={fps},setsar=1[v{i}]")
         fc.append(f"[0:a]atrim={a:.3f}:{b:.3f},asetpts=PTS-STARTPTS,afade=t=in:d=0.012,"

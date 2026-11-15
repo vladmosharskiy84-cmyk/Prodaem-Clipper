@@ -1,9 +1,10 @@
-"""Отчёты админу (Владу) из приложения МУРЧИК: что нашли, что смонтировали, какие ошибки.
+"""Отчёты админу (Владу): что нашли, что смонтировали, какие ошибки — из МУРЧИКА у людей и из полной программы
+(Влад и братики, все профили). Всё видно в одном месте: Telegram бота HQ и панель hq-mur.
 
-Что уходит на сервер HQ: имя, которое человек ввёл сам, версия программы, название видео/момента, стиль, длина,
-оценка критика, раскадровка готового ролика (маленькая картинка) и текст ошибки с последними строками журнала.
+Что уходит на сервер HQ: имя, которое человек ввёл сам, программа и профиль, версия, название клипа/момента, стиль,
+длина, оценка критика, раскадровка готового ролика (маленькая картинка) и текст ошибки с последними строками журнала.
 Ключи, токены и сами видео НЕ отправляются. Нет интернета — отчёты копятся в cache/report_queue.jsonl и уйдут позже.
-Работает только в режиме монтажа блогера (Мурчик): webapp ставит ENABLED.
+Имя одно на всю программу (user.json рядом с программой), а не на каждую вкладку. webapp ставит ENABLED, APP, PROFILE.
 """
 import base64
 import json
@@ -12,15 +13,18 @@ import threading
 import time
 import urllib.request
 import uuid
+from pathlib import Path
 
 import montage as m
 
 SERVER = "http://209.38.41.246:8092"             # сервис hq-mur на сервере HQ (hq/hq/mur.py)
 APP_KEY = "mur-7Qx2LkV9cR4tW8pZ"                 # ключ только на запись отчётов: прочитать по нему ничего нельзя
-USER_FILE = m.BASE / "user.json"
+USER_FILE = Path(__file__).resolve().parent / "user.json"     # одно имя на все вкладки программы
 QUEUE = m.CACHE / "report_queue.jsonl"
 KEEP = 500                                       # без связи долго — храним только последние 500 событий
 ENABLED = False
+APP = "clipper"                                  # "murchik" — массовое приложение, "clipper" — полная программа
+PROFILE = ""                                     # вкладка: СНГ, DOTA, МУРЧИК, РЕАКТЫ…
 _lock = threading.Lock()
 _wake = threading.Event()
 _started = False
@@ -58,7 +62,7 @@ def ev(kind, **data):
     """Событие в очередь: start, hello, found, montage, error."""
     if not ENABLED:
         return
-    rec = dict(data, kind=kind, t=time.time())
+    rec = dict(data, kind=kind, t=time.time(), app=APP, profile=PROFILE)
     try:
         m.CACHE.mkdir(exist_ok=True)
         with _lock, QUEUE.open("a", encoding="utf-8") as f:
@@ -83,9 +87,15 @@ def sheet(video):
 
 
 def montage_done(out, meta, title=""):
-    rv = meta.get("review") or {}
+    rv = meta.get("review") or meta.get("agents") or {}
     ev("montage", title=str(title)[:120], style=meta.get("style", ""), dur=meta.get("duration"),
        hook=meta.get("hook", ""), score=rv.get("score"), decision=rv.get("decision", ""), sheet=sheet(out))
+
+
+def montage_bg(out, meta, title=""):
+    """То же в фоне: раскадровка делается ffmpeg, очередь монтажа не ждёт."""
+    if ENABLED:
+        threading.Thread(target=montage_done, args=(out, meta, title), daemon=True).start()
 
 
 def _send(batch):

@@ -346,6 +346,7 @@ def init_data():
             "font": A.st.get("font") if A.st.get("font") in m.available_fonts() else "",
             "banners": banners_short(), "banner_use": A.cfg.get("banner_use"),
             "needs_setup": rv.needs_setup() and A.cfg.get("mode") not in ("blogger", "reaction"), "game": gl or "КС",
+            "ask_name": not mass_murchik() and not report.user().get("name"),   # братики: имя для отслеживания ошибок
             "video_broken": VB_FILE.exists(), "mode": A.cfg.get("mode") or "clips",
             "can_dota": not ROLE["child"] and A.cfg.get("mode") != "blogger" and not any(k == "dota" for k, _ in profile_dirs())
                         and 1 + len(all_profile_dirs()) < MAX_PROFILES,
@@ -617,7 +618,7 @@ def blog_req(d):
         return {"music": blogger.music_list(), "sounds": blogger.sound_list(), "saved": saved, "hook_font": hf[0],
                 "corsiva": hf[0].lower().startswith("monotype"), "sub_font": blogger.sub_font(download=False)[0],
                 "hook_fonts": blogger.user_hook_fonts(),
-                "mstyles": blogger.mstyles_public(),
+                "mstyles": blogger.mstyles_public(), "owner": blogger.OWNER,
                 "setup": {"name": report.user().get("name", ""),       # первый запуск: имя и свой ключ Claude
                           "key": m.KEY_FILE.exists() and len(m.KEY_FILE.read_text(encoding="utf-8-sig").strip()) > 20}
                 if mass_murchik() else None}
@@ -686,7 +687,7 @@ def blog_req(d):
             d["tg"] = False
         opts = {k: d[k] for k in ("music", "music_db", "hook_words", "hook_font", "hook_text", "hook_caps", "hook_case",
                                   "hook_palette", "cut_fillers", "story_len", "stories", "click", "click_vol", "bw", "cut_pauses", "tg",
-                                  "max_gap", "mstyle") if k in d}
+                                  "max_gap", "mstyle", "vlog") if k in d}
         BLOG_CFG.write_text(json.dumps(opts, ensure_ascii=False), encoding="utf-8")
         n_long = 0
         for f in files:
@@ -723,7 +724,7 @@ def blog_req(d):
         if A.cfg.get("no_tg"):
             d["tg"] = False
         opts = {k: d[k] for k in ("music", "music_db", "hook_words", "hook_font", "hook_text", "hook_case", "hook_palette",
-                                  "cut_fillers", "click", "click_vol", "bw", "cut_pauses", "tg", "max_gap", "mstyle") if k in d}
+                                  "cut_fillers", "click", "click_vol", "bw", "cut_pauses", "tg", "max_gap", "mstyle", "vlog") if k in d}
         BLOG_CFG.write_text(json.dumps(dict(saved, **{k: v for k, v in opts.items() if k != "hook_text"}), ensure_ascii=False),
                             encoding="utf-8")
         opts["story_title"] = p.get("title", "")         # тема истории — для стилей с заголовком сверху
@@ -971,12 +972,11 @@ def worker():
             else:
                 err = str(e) or e.__class__.__name__
                 A.log(f"  ошибка: {err}")
-                if job.get("blog"):                  # админу: где и что сломалось + последние строки журнала
-                    with A.lock:
-                        tail = [x.get("text", "") for x in A.events if x.get("kind") == "log"][-15:]
-                    report.ev("error", where="поиск моментов" if job.get("long") else "монтаж",
-                              msg=err[:600], title=str(job.get("title") or job.get("clip", {}).get("title", ""))[:120],
-                              log=tail)
+                with A.lock:                         # админу: где и что сломалось + последние строки журнала
+                    tail = [x.get("text", "") for x in A.events if x.get("kind") == "log"][-15:]
+                report.ev("error", where="поиск моментов" if job.get("long") else "монтаж",
+                          msg=err[:600], title=(str(job.get("streamer") or "") + " · " if not job.get("blog") else "")
+                          + str(job.get("title") or job.get("clip", {}).get("title", ""))[:120], log=tail)
         if err == "cancel":                      # остановлено кнопкой: недоделанный файл убираем, клип в очередь
             CANCEL.update(jid=None, flag=False, procs=set())
             try:
@@ -998,6 +998,14 @@ def worker():
         CANCEL.update(jid=None, flag=False, procs=set())
         ok = bool(out)
         dropped = not ok and (job.get("agents") or {}).get("decision") == "reject"   # судья: неактуально
+        if ok and not job.get("blog"):                # готовый клип — в отчёт админу (раскадровка видна в панели)
+            try:
+                meta = json.loads(Path(out).with_suffix(".json").read_text(encoding="utf-8"))
+            except Exception:
+                meta = {}
+            report.montage_bg(out, dict(meta, agents=job.get("agents") or meta.get("agents") or {}),
+                              f"{job.get('streamer') or job['clip'].get('streamer') or ''} · "
+                              f"{meta.get('final_title') or job['clip'].get('title', '')}")
         with A.lock:
             if not job.get("blog") or job.get("cid"):
                 A.st["clips"][job["clip"]["clip_id"]] = "done" if ok else ("skipped" if dropped else "retry")
@@ -1299,8 +1307,14 @@ def find_clips():
                 tail = "поиск не сработал: " + r.stderr.strip().splitlines()[-1][:200]
             A.log(tail)
             A.toast(tail[:90], ok=not r.returncode)
+            if r.returncode:                         # админу: поиск клипов сломался
+                report.ev("error", where="поиск клипов", msg=tail[:600], log=lines[-10:])
+            else:
+                nm = re.search(r"[Нн]овых клипов:?\s*(\d+)", tail)
+                report.ev("found", video="поиск клипов Twitch", n=int(nm.group(1)) if nm else 0)
         except Exception as e:
             A.log(f"поиск не сработал: {e}")
+            report.ev("error", where="поиск клипов", msg=str(e)[:600])
         finally:
             A.finding = False
             A.refresh()
@@ -1624,6 +1638,12 @@ def settings(d):
                 except Exception:
                     pass
         return {"ok": True, "restart": bool(d.get("shown"))}
+    if act == "report_name":                     # имя для отслеживания ошибок (один раз на всю программу)
+        name = str(d.get("name") or "").strip()
+        if not name:
+            return {"error": "Впиши имя или ник"}
+        report.set_name(name)
+        return {"ok": True}
     if act == "save":
         blog = A.cfg.get("mode") == "blogger"
         if blog and not (d.get("claude") or "").strip():
@@ -2811,7 +2831,16 @@ def run(port=0, window=True, token=None, parent=0, start=""):
             A.log(msg)
         start_children()
     threading.Thread(target=worker, name="montage-worker", daemon=True).start()
-    report.ENABLED = mass_murchik()                  # отчёты админу — только из массового приложения МУРЧИК
+    # отчёты админу: из МУРЧИКА у людей и из полной программы (Влад, братики) — всё в одном месте
+    report.ENABLED = True
+    report.APP = "murchik" if mass_murchik() else "clipper"
+    report.PROFILE = "МУРЧИК" if mass_murchik() else (rv.PROFILE or "СНГ")
+    try:
+        import blogger
+        if blogger.OWNER and not report.user().get("name"):
+            report.set_name("Влад (админ)")
+    except Exception:
+        pass
     report.ev("start")
     threading.Thread(target=auto_find_loop, daemon=True).start()
     threading.Thread(target=cleanup_loop, daemon=True).start()

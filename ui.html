@@ -589,6 +589,7 @@ const S={init:null,items:[],cur:null,clip:null,fmt:"talk",rects:[],content:null,
   $("#chips").innerHTML=d.formats.map(f=>`<button class="chip" data-f="${f.key}" title="${esc(f.full)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${ICONS[f.key]}</svg><span>${esc(f.label)}</span></button>`).join("");
   $$("#chips .chip").forEach(c=>c.onclick=()=>setFmt(c.dataset.f,true));
   S.style=d.style||"classic";S.font=d.font||"";S.banner=d.banner_use;S.anim=d.anim||"karaoke";S.look=d.sub_look||"";$("#zoom").checked=d.zoom!==false;$("#teaser").checked=d.teaser!==false;S.videoBroken=!!d.video_broken;
+  if(d.ask_name)setTimeout(askReportName,800);
   if(d.mode==="blogger"){await blogMode();poll();if(d.blog_keys)setTimeout(openSettings,500);return}
   if(d.mode==="reaction"){await reactMode();poll();return}
   loadFontPreviews();buildMenus();await loadQueue(true);poll();
@@ -986,6 +987,7 @@ async function openSettings(){const v=await api("settings",{act:"get"});
     if(r.error){db.disabled=false;db.textContent="Создать вкладку DOTA";return toast(r.error,false)}
     if(!r.banner)alert("Вкладка DOTA создана. Добавь баннер оффера для доты: «Баннер оффера» → «Баннеры офферов…».");location.href=r.url;};
   if(S.init&&S.init.no_tg){const tg=w.querySelector("#s_tg");if(tg)tg.closest(".sect").remove();const tp=w.querySelector("#s_topics");if(tp)tp.closest(".sect").remove();}
+  if(S.init&&S.init.mode==="blogger"){const tp=w.querySelector("#s_topics");if(tp)tp.closest(".sect").remove();}   /* темы клипов Мурчику не нужны */
   if(S.init&&S.init.mode!=="blogger"&&!S.init.profile){(async()=>{const t=await api("settings",{act:"tabs"});if(!(t.tabs||[]).length)return;
     const box=document.createElement("div");box.className="sect";box.innerHTML=`<h4>Вкладки профилей</h4><p>Сними галочку, и вкладка пропадёт, а профиль перестанет работать в фоне. Все его данные остаются в папке, вернуть можно здесь же.</p>`+
       t.tabs.map(x=>`<label class="note" style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" data-tab="${esc(x.key)}" ${x.shown?"checked":""}> ${esc(x.label)}</label>`).join("");
@@ -1041,7 +1043,7 @@ async function openSettings(){const v=await api("settings",{act:"get"});
   w.querySelector("#s_topics").onclick=async()=>{const res=w.querySelector("#r_topics");const tok=w.querySelector("#s_tg").value.trim();
     if(!tok){res.className="res bad";res.textContent="сначала вставь токен бота";return}res.className="res";res.innerHTML='<span class="spin"></span>';
     await api("settings",{act:"tg",tg:tok});const r=await api("tg_topics");res.className="res "+(r.ok?"ok":"bad");res.textContent=r.text||r.error;};
-  w.querySelector("#s_save").onclick=async()=>{const g=k=>w.querySelector("#s_"+k).value.trim();const r=await api("settings",{act:"save",cid:g("cid"),sec:g("sec"),claude:g("claude"),tg:g("tg")});
+  w.querySelector("#s_save").onclick=async()=>{const g=k=>((w.querySelector("#s_"+k)||{}).value||"").trim();   /* у Мурчика полей Twitch нет */const r=await api("settings",{act:"save",cid:g("cid"),sec:g("sec"),claude:g("claude"),tg:g("tg")});
     if(r.error){w.querySelector("#s_msg").textContent=r.error;return}w.close();};}
 
 /* нарезка стрима */
@@ -1246,6 +1248,18 @@ function openMurStyles(list,cur,onPick,F){let cat="all",pick=cur||"mine";
       const sc=p.querySelector(".ms-scene");if(sc.dataset.bw)sc.style.filter=tick%8<2?"grayscale(1)":sc.dataset.f;});},650);
   grid.querySelectorAll(".ms-ph").forEach(p=>{if(p.querySelector(".ms-stair,.ms-title"))p.classList.add("intro")});}
 
+/* полная программа: имя один раз — чтобы админ видел, у кого ошибка, и быстро чинил */
+function askReportName(){if($(".modal"))return setTimeout(askReportName,1500);
+  const w=modal(`<h3>Как тебя зовут?</h3><p class="sub">Это нужно для отслеживания ошибок: если у тебя что-то сломается, программа сама сообщит админу, и он быстро починит. Спросим один раз.</p>
+    <input class="inp" id="rn_name" autocomplete="off" placeholder="Имя или ник">
+    <p class="fhint" id="rn_msg" style="color:var(--bad)"></p>
+    <div class="flex" style="justify-content:flex-end"><button class="btn primary" style="--h:44px" id="rn_ok">Готово</button></div>`,"narrow");
+  w.querySelector(".close").hidden=true;
+  w.addEventListener("pointerdown",e=>{if(e.target===w)e.stopImmediatePropagation()},true);
+  const ok=w.querySelector("#rn_ok");
+  ok.onclick=async()=>{const r=await api("settings",{act:"report_name",name:w.querySelector("#rn_name").value});
+    if(r.error){w.querySelector("#rn_msg").textContent=r.error;return}w.close();toast("Спасибо!");};}
+
 /* первый запуск Мурчика: имя для админа и свой ключ Claude (каждый платит за свой монтаж сам) */
 function openMurSetup(st){
   const w=modal(`<h3>Добро пожаловать в МУРЧИК</h3><p class="sub">Два шага — и можно монтировать.</p>
@@ -1296,7 +1310,8 @@ async function blogMode(){
     <div class="flex" style="flex-wrap:wrap;gap:14px">
       <label class="note" style="display:flex;gap:8px;align-items:center">Шрифт главных слов <select class="inp" id="bl_hf" style="height:36px;width:auto;max-width:240px"></select><button class="btn sm" id="bl_addf">+ шрифт</button></label>
       <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="bl_fill"> вырезать «э», «мм», паразиты</label>
-      <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="bl_tg"> в Telegram</label></div>`;
+      <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="bl_tg"> в Telegram</label>
+      ${r0.owner?`<label class="note" style="display:flex;gap:8px;align-items:center" title="Только у тебя: стрельбу и движ без слов не вырезает, кадр держится на лицах, истории ищутся под влоги (экшн, угар, развязка)"><input type="checkbox" id="bl_vlog"> <b>влог / экшн</b> (только у тебя)</label>`:""}</div>`;
   $(".editor").insertBefore(sec,$(".editor .acts"));
   $("#cliptitle").textContent="Момент";
   const q=x=>document.querySelector(x);
@@ -1307,7 +1322,7 @@ async function blogMode(){
     q("#bl_hf").value=list.includes(sel)?sel:"";};
   fillF(r0.hook_fonts||[],sv.hook_font||"");fillMus(r0.music||[],sv.music??null);fillSnd(r0.sounds||[],sv.click||"mouse");
   q("#bl_db").value=sv.music_db??-20;q("#bl_cv").value=sv.click_vol??70;q("#bl_case").value=sv.hook_case||"title";q("#bl_pal").value=sv.hook_palette||"red_white";
-  q("#bl_fill").checked=sv.cut_fillers!==false;q("#bl_tg").checked=sv.tg!==false;
+  q("#bl_fill").checked=sv.cut_fillers!==false;q("#bl_tg").checked=sv.tg!==false;if(q("#bl_vlog"))q("#bl_vlog").checked=!!sv.vlog;
   const msUI=k=>{q("#bl_ms").value=k;const s=(r0.mstyles||[]).find(x=>x.key===k);
     q("#bl_msbtn").innerHTML=s?`${esc(s.name)} <em>· ${MS_DESC(s)}</em>`:`Свой у каждого <em>· на каждом ПК и видео свой стиль — у друзей выйдет по-другому</em>`;};
   msUI(sv.mstyle||"mine");q("#bl_msbtn").onclick=async e=>{e.stopPropagation();
@@ -1316,7 +1331,7 @@ async function blogMode(){
   const lab=()=>{q("#bl_dbv").textContent=q("#bl_db").value+" дБ";q("#bl_cvv").textContent=q("#bl_cv").value+"%";};lab();q("#bl_db").oninput=lab;q("#bl_cv").oninput=lab;
   const opts=()=>({music:q("#bl_mus").value||null,music_db:+q("#bl_db").value,click:q("#bl_ck").value,click_vol:+q("#bl_cv").value,
     hook_font:q("#bl_hf").value||null,hook_text:q("#bl_ht").value.trim(),hook_case:q("#bl_case").value,hook_palette:q("#bl_pal").value,
-    cut_fillers:q("#bl_fill").checked,tg:q("#bl_tg").checked,bw:true,cut_pauses:true,mstyle:q("#bl_ms").value||"mine"});
+    cut_fillers:q("#bl_fill").checked,tg:q("#bl_tg").checked,bw:true,cut_pauses:true,mstyle:q("#bl_ms").value||"mine",vlog:!!(q("#bl_vlog")&&q("#bl_vlog").checked)});
   q("#bl_addf").onclick=async()=>{const r=await api("blog",{act:"add_font"});if(!r.added)return;
     if(!r.cyr){toast("В этом шрифте нет русских букв — им не написать по-русски. Нужна версия с кириллицей.",false);fillF(r.fonts,q("#bl_hf").value);return}
     fillF(r.fonts,r.added);toast("Шрифт добавлен");};
@@ -1335,7 +1350,7 @@ async function blogMode(){
     const w=(c.hook_words||[]).join(" ");q("#bl_ht").value=w;q("#bl_sugg").textContent=w?"· Claude предложил, можно поменять":"";
     hint(c.reason?"Почему этот момент: "+c.reason:"");};
   /* добавление видео */
-  const start=async(body)=>{const r=await api("blog",Object.assign({act:"start"},body,{stories:+(sv.stories||10),story_len:sv.story_len||"short"}));
+  const start=async(body)=>{const r=await api("blog",Object.assign({act:"start"},body,{stories:+(sv.stories||10),story_len:sv.story_len||"short",vlog:!!(q("#bl_vlog")&&q("#bl_vlog").checked)}));
     if(r.error)return toast(r.error,false);
     toast(r.long?"Ищу лучшие моменты — ход в панели «Монтаж», они появятся в очереди слева":`В очереди: ${r.queued}`);};
   const dz=q("#bl_drop"),up=q("#bl_up");
@@ -1357,7 +1372,7 @@ async function blogMode(){
     w.querySelector("#y_n").value=String(sv.stories||10);w.querySelector("#y_len").value=sv.story_len||"short";
     w.querySelector("#y_go").onclick=async()=>{const url=w.querySelector("#y_url").value.trim();if(!url){w.querySelector("#y_msg").textContent="Вставь ссылку";return}
       sv.stories=+w.querySelector("#y_n").value;sv.story_len=w.querySelector("#y_len").value;
-      const r=await api("blog",{act:"start",url,stories:sv.stories,story_len:sv.story_len});if(r.error){w.querySelector("#y_msg").textContent=r.error;return}
+      const r=await api("blog",{act:"start",url,stories:sv.stories,story_len:sv.story_len,vlog:!!(q("#bl_vlog")&&q("#bl_vlog").checked)});if(r.error){w.querySelector("#y_msg").textContent=r.error;return}
       toast("Скачиваю и ищу моменты — ход в панели «Монтаж»");w.close();};
     w.querySelector("#y_url").focus();};
   await loadQueue(true);

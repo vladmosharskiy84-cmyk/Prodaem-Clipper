@@ -647,6 +647,29 @@ STORY_PROMPT = """Ниже расшифровка видео блогера с �
 {text}"""
 
 
+VLOG_PROMPT = """Ниже расшифровка ВЛОГА с отметками времени [секунды]: несколько людей, движ, игры, поездки, челленджи
+(например, страйкбол «блогеры против военных»). Большие промежутки между отметками без слов — это экшн: стрельба, беготня,
+штурм, драка, гонка. Найди {n} лучших отдельных моментов для TikTok/Reels, аудитория — парни. Что брать (в порядке важности):
+1) экшн с реакцией: что-то произошло (заход, выстрел, подрыв, проигрыш, победа) и люди орут, смеются, в шоке;
+2) угар: подколы, споры, «тебя подкупили», смешные правила и тупые вопросы, кто-то опозорился;
+3) развязка и счёт: кто победил, «в сухую», реванш, финальный штурм — с напряжением до и итогом после.
+Брифинги без шуток, долгие объяснения правил и пустой трёп не бери.
+
+Каждый момент — законченный кусок, понятный без остального видео, длиной {a}–{b} секунд: начинается с действия или
+цепляющей фразы, заканчивается реакцией, панчем или итогом. Экшн без слов внутри момента — это хорошо, не обрывай его.
+Моменты не пересекаются. Сначала самые сильные.
+
+Для каждого дай 3 главных слова — о чём момент, по одному слову, с большой буквы (пример: «Штурм», «Военные», «Позор»):
+они крупно встанут в начале ролика.
+
+Ответ ТОЛЬКО JSON-список:
+[{{"start": секунда начала, "end": секунда конца, "kind": "экшн|угар|развязка", "words": ["Слово", "Слово", "Слово"],
+  "title": "о чём, 3–6 слов", "why": "почему зайдёт, коротко", "score": 1-10}}]
+
+Расшифровка:
+{text}"""
+
+
 def _json_objects(out):
     """Список историй из ответа Claude, даже если JSON оборван или вокруг него текст: берём каждый целый {…}."""
     out = re.sub(r"```(?:json)?|```", "", out or "")
@@ -696,7 +719,7 @@ def _lines(words, step=14):
     return out
 
 
-def pick_stories(words, n, length, cfg, say=print):
+def pick_stories(words, n, length, cfg, say=print, vlog=False):
     key = m.KEY_FILE.read_text(encoding="utf-8-sig").strip() if m.KEY_FILE.exists() else ""
     if not key:
         raise Stop("чтобы находить лучшие истории в длинном видео, нужен ключ Claude (Настройки и ключи)")
@@ -716,7 +739,8 @@ def pick_stories(words, n, length, cfg, say=print):
         r = requests.post("https://api.anthropic.com/v1/messages",
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
                           json={"model": cfg.get("story_model") or cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 10000,
-                                "messages": [{"role": "user", "content": STORY_PROMPT.format(n=min(24, n * 3), a=a, b=b, text=chunk)}]},
+                                "messages": [{"role": "user", "content": (VLOG_PROMPT if vlog else STORY_PROMPT).format(
+                                    n=min(24, n * 3), a=a, b=b, text=chunk)}]},
                           timeout=240)
         if r.status_code != 200:
             raise Stop(f"Claude ответил {r.status_code}: {r.text[:200]}")
@@ -754,6 +778,8 @@ def pick_stories(words, n, length, cfg, say=print):
         e_ok = [w["e"] for w in ws if w["e"] <= e0 + 0.8] or [e0]
         s1 = max(0.0, min(s_ok) - 0.25)
         e1 = max(e_ok) + 0.4
+        if vlog:                                     # во влоге момент может начаться и кончиться экшеном без слов
+            s1, e1 = min(s1, max(0.0, s0)), max(e1, e0)
         ok.append({"start": s1, "end": e1, "words": [str(x) for x in (st.get("words") or [])][:4],
                    "title": (f"[{st['kind']}] " if st.get("kind") else "") + str(st.get("title", "")), "why": str(st.get("why", "")), "score": st.get("score")})
         if len(ok) >= n:
@@ -780,7 +806,7 @@ def long_find(src, cfg, opts=None, n=10, say=print, should_stop=None):
     if len(words) < 30:
         raise Stop("в видео почти нет речи: истории искать не в чем")
     say("ищу лучшие моменты…")
-    stories = pick_stories(words, int(n), o.get("story_len") or "short", cfg, say)
+    stories = pick_stories(words, int(n), o.get("story_len") or "short", cfg, say, vlog=bool(o.get("vlog")) and OWNER)
     if not stories:
         raise Stop("Claude не нашёл подходящих моментов, попробуй другую длину")
     raw_dir = BASE / "clips" / "raw" / "murchik"
@@ -828,7 +854,7 @@ def long_make(src, cfg, enc, opts=None, n=5, say=print, should_stop=None, on_rea
     if len(words) < 30:
         raise Stop("в видео почти нет речи: истории искать не в чем")
     say("ищу лучшие истории…")
-    stories = pick_stories(words, int(n), o.get("story_len") or "short", cfg, say)
+    stories = pick_stories(words, int(n), o.get("story_len") or "short", cfg, say, vlog=bool(o.get("vlog")) and OWNER)
     if not stories:
         raise Stop("Claude не нашёл подходящих историй, попробуй другую длину")
     say("нашёл историй: " + str(len(stories)) + " — " + "; ".join(f"{s['title']} ({s['end'] - s['start']:.0f} с)" for s in stories)[:300])
@@ -1072,6 +1098,9 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
         segs = [(0.0, dur)]
     words = m.ai_fix_words(words, src, cfg)
     segs = [(a, b) for a, b in segs if b - a > 0.08] or [(0.0, dur)]
+    vlog = bool(o.get("vlog")) and OWNER         # влог/экшн — только у владельца
+    if vlog and o["cut_pauses"]:                 # стрельбу и беготню без слов не выкидываем
+        segs = add_action(segs, src, dur, say)
     total = sum(b - a for a, b in segs)
     if o["cut_pauses"]:
         say(f"паузы вырезаны: {dur - total:.1f} с, кусков {len(segs)}")
@@ -1135,11 +1164,15 @@ def make(src, cfg, enc, opts=None, say=print, out=None):
             since = 0.0
         zs.append(last_z)
         since += b - a
+    fcx = [None] * len(segs)
+    if vlog:                                         # окно держится на лицах, а не просто по центру
+        say("ищу людей в кадре…")
+        fcx = face_centers(src, segs, sw, sh)
     for i, (a, b) in enumerate(segs):                # каждый кусок: своя крупность плана (лёгкий «зум на стыке»)
         z = zs[i]
         # широкий кадр из горизонтального исходника: подходим ближе, чтобы человек не терялся в полосе
         bz = 1.9 if st["frame"] == "cinema" and sw / max(1, sh) > 1.2 else 1.0
-        cw, ch, cx, cy = card_crop(sw, sh, z * bz, box, fw, fh)
+        cw, ch, cx, cy = card_crop(sw, sh, z * bz, box, fw, fh, fcx[i])
         fc.append(f"[0:v]trim={a:.3f}:{b:.3f},setpts=PTS-STARTPTS,crop={cw}:{ch}:{cx}:{cy},"
                   f"scale={fw}:{fh}:flags=lanczos,fps={fps},setsar=1[v{i}]")
         fc.append(f"[0:a]atrim={a:.3f}:{b:.3f},asetpts=PTS-STARTPTS,afade=t=in:d=0.012,"
