@@ -562,6 +562,16 @@ def render_lock(port=None):
 BLOG_CFG = BASE / "blogger.json"
 
 
+def mass_murchik():
+    """Это массовое приложение МУРЧИК (свой канал обновлений murchik/), а не Мурчик в полной программе Влада или братиков.
+    Только там окно первого запуска (имя + свой ключ) и отчёты админу."""
+    try:
+        import updater
+        return A.cfg.get("mode") == "blogger" and "/murchik/" in updater.base_url()
+    except Exception:
+        return False
+
+
 def run_blog(job, j):
     import blogger
 
@@ -609,7 +619,8 @@ def blog_req(d):
                 "hook_fonts": blogger.user_hook_fonts(),
                 "mstyles": blogger.mstyles_public(),
                 "setup": {"name": report.user().get("name", ""),       # первый запуск: имя и свой ключ Claude
-                          "key": m.KEY_FILE.exists() and len(m.KEY_FILE.read_text(encoding="utf-8-sig").strip()) > 20}}
+                          "key": m.KEY_FILE.exists() and len(m.KEY_FILE.read_text(encoding="utf-8-sig").strip()) > 20}
+                if mass_murchik() else None}
     if act == "setup_save":                      # первый запуск Мурчика: имя для админа и свой ключ Claude
         name = str(d.get("name") or "").strip()
         key = str(d.get("key") or "").strip()
@@ -2800,7 +2811,7 @@ def run(port=0, window=True, token=None, parent=0, start=""):
             A.log(msg)
         start_children()
     threading.Thread(target=worker, name="montage-worker", daemon=True).start()
-    report.ENABLED = A.cfg.get("mode") == "blogger"   # отчёты админу — только из Мурчика
+    report.ENABLED = mass_murchik()                  # отчёты админу — только из массового приложения МУРЧИК
     report.ev("start")
     threading.Thread(target=auto_find_loop, daemon=True).start()
     threading.Thread(target=cleanup_loop, daemon=True).start()

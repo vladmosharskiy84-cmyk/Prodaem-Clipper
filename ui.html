@@ -1246,9 +1246,34 @@ function openMurStyles(list,cur,onPick,F){let cat="all",pick=cur||"mine";
       const sc=p.querySelector(".ms-scene");if(sc.dataset.bw)sc.style.filter=tick%8<2?"grayscale(1)":sc.dataset.f;});},650);
   grid.querySelectorAll(".ms-ph").forEach(p=>{if(p.querySelector(".ms-stair,.ms-title"))p.classList.add("intro")});}
 
+/* первый запуск Мурчика: имя для админа и свой ключ Claude (каждый платит за свой монтаж сам) */
+function openMurSetup(st){
+  const w=modal(`<h3>Добро пожаловать в МУРЧИК</h3><p class="sub">Два шага — и можно монтировать.</p>
+    <p class="label">1. Как тебя зовут (имя или ник TikTok)</p><input class="inp" id="su_name" autocomplete="off" placeholder="Например: Саша / @sasha.clips" value="${esc(st.name||"")}">
+    <p class="label" style="margin-top:16px">2. Твой ключ Claude ${st.key?'<span class="note" style="color:var(--ok)">— уже вставлен ✓, можно не трогать</span>':""}</p>
+    <ol class="note" style="text-align:left;margin:4px 0 10px;padding-left:18px;line-height:1.7">
+      <li>Открой <b>console.anthropic.com</b> и зарегистрируйся.</li>
+      <li><b>Billing</b> → пополни баланс на $5 — хватит примерно на 30–100 видео (поиск историй и проверка роликов).</li>
+      <li><b>API Keys</b> → <b>Create Key</b> → скопируй ключ (начинается с <b>sk-ant-</b>) и вставь сюда.</li></ol>
+    <input class="inp" id="su_key" type="password" autocomplete="off" placeholder="${st.key?"оставь пустым, если ключ уже вставлен":"sk-ant-…"}">
+    <p class="note" style="margin-top:14px;text-align:left">Программа отправляет админу отчёты: твоё имя, какие ролики смонтированы (маленькая раскадровка, стиль, оценка) и ошибки — чтобы быстро чинить. Ключ и сами видео не отправляются.</p>
+    <p class="fhint" id="su_msg" style="color:var(--bad)"></p>
+    <div class="flex" style="justify-content:flex-end"><button class="btn primary" style="--h:44px" id="su_ok">Готово</button></div>`,"narrow");
+  w.querySelector(".close").hidden=true;                 /* без имени и ключа работать нельзя — окно не закрывается */
+  w.addEventListener("pointerdown",e=>{if(e.target===w)e.stopImmediatePropagation()},true);
+  const noEsc=e=>{if(e.key==="Escape")e.stopImmediatePropagation()};document.addEventListener("keydown",noEsc,true);
+  const close=w.close;w.close=()=>{document.removeEventListener("keydown",noEsc,true);close()};
+  const ok=w.querySelector("#su_ok");
+  ok.onclick=async()=>{ok.disabled=true;ok.innerHTML='<span class="spin"></span> Проверяю ключ…';
+    const r=await api("blog",{act:"setup_save",name:w.querySelector("#su_name").value,key:w.querySelector("#su_key").value});
+    ok.disabled=false;ok.textContent="Готово";
+    if(r.error){w.querySelector("#su_msg").textContent=r.error;return}
+    w.close();toast("Готово! Кидай видео или ссылку с YouTube");};}
+
 async function blogMode(){
   document.body.classList.add("blogmode");
   const r0=await api("blog",{act:"init"});const sv=r0.saved||{};
+  if(r0.setup&&(!r0.setup.name||!r0.setup.key))setTimeout(()=>openMurSetup(r0.setup),300);
   /* слева: очередь моментов + добавление видео */
   $(".qbtns").innerHTML=`<div class="drop sm" id="bl_drop"><b>Перетащи видео сюда</b><span>или нажми, чтобы выбрать. Длинное (больше 3 минут) — найду лучшие моменты, короткое встанет в очередь целиком</span><em id="bl_up"></em></div>
     <button class="btn" id="bl_yt" style="--k:#e8321f">Целое видео с YouTube…</button>

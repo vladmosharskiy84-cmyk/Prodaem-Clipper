@@ -23,6 +23,7 @@ from pathlib import Path
 
 import montage as m
 import review as rv
+import report
 
 BASE = rv.BASE                                   # данные этого профиля
 CODE = rv.CODE                                   # сама программа (одна на все профили)
@@ -561,6 +562,16 @@ def render_lock(port=None):
 BLOG_CFG = BASE / "blogger.json"
 
 
+def mass_murchik():
+    """Это массовое приложение МУРЧИК (свой канал обновлений murchik/), а не Мурчик в полной программе Влада или братиков.
+    Только там окно первого запуска (имя + свой ключ) и отчёты админу."""
+    try:
+        import updater
+        return A.cfg.get("mode") == "blogger" and "/murchik/" in updater.base_url()
+    except Exception:
+        return False
+
+
 def run_blog(job, j):
     import blogger
 
@@ -573,9 +584,12 @@ def run_blog(job, j):
         made = blogger.long_find(job["src"], A.cfg, job["opts"], n=job.get("n", 10), say=say,
                                  should_stop=lambda: CANCEL["flag"])
         job["note"] = f"готово: {len(made)} моментов в очереди слева"
+        report.ev("found", video=str(job.get("clip", {}).get("title") or job["src"])[:150], n=len(made),
+                  titles=[str(p.get("title", ""))[:80] for p in made][:12])
         A.refresh()
         return BASE / made[0]["file"]
     out, meta = blogger.make_checked(job["src"], A.cfg, A.enc, job["opts"], say=say)
+    report.montage_done(out, meta, job.get("title") or job.get("clip", {}).get("title", ""))
     rv = meta.get("review") or {}
     job["note"] = (("критик: выкладывать" if rv.get("decision") == "publish" else "критик: брак")
                    + (f" {rv['score']}/10" if rv.get("score") is not None else "")) if rv else ""
@@ -603,7 +617,32 @@ def blog_req(d):
         return {"music": blogger.music_list(), "sounds": blogger.sound_list(), "saved": saved, "hook_font": hf[0],
                 "corsiva": hf[0].lower().startswith("monotype"), "sub_font": blogger.sub_font(download=False)[0],
                 "hook_fonts": blogger.user_hook_fonts(),
-                "mstyles": blogger.mstyles_public()}
+                "mstyles": blogger.mstyles_public(),
+                "setup": {"name": report.user().get("name", ""),       # первый запуск: имя и свой ключ Claude
+                          "key": m.KEY_FILE.exists() and len(m.KEY_FILE.read_text(encoding="utf-8-sig").strip()) > 20}
+                if mass_murchik() else None}
+    if act == "setup_save":                      # первый запуск Мурчика: имя для админа и свой ключ Claude
+        name = str(d.get("name") or "").strip()
+        key = str(d.get("key") or "").strip()
+        if not name:
+            return {"error": "Впиши имя или ник — так админ поймёт, чьи это ролики"}
+        if key:
+            import urllib.request
+            import urllib.error
+            req = urllib.request.Request("https://api.anthropic.com/v1/models",
+                                         headers={"x-api-key": key, "anthropic-version": "2023-06-01"})
+            try:                                 # бесплатная проверка: список моделей открывается только с рабочим ключом
+                urllib.request.urlopen(req, timeout=20).read()
+            except urllib.error.HTTPError as e:
+                return {"error": "Ключ не подошёл: проверь, что скопировал целиком (начинается с sk-ant-)" if e.code in (401, 403)
+                        else f"Claude ответил {e.code}, попробуй ещё раз"}
+            except Exception:
+                return {"error": "Нет связи с Claude: проверь интернет"}
+            m.KEY_FILE.write_text(key, encoding="utf-8")
+        elif not (m.KEY_FILE.exists() and len(m.KEY_FILE.read_text(encoding="utf-8-sig").strip()) > 20):
+            return {"error": "Вставь свой ключ Claude — без него программа не найдёт истории"}
+        report.set_name(name)
+        return {"ok": True}
     if act == "style_frame":                     # постоянный кадр Вальдемара для окна стилей (лежит рядом с программой)
         import base64
         f = CODE / "ms_frame.jpg"
@@ -932,6 +971,12 @@ def worker():
             else:
                 err = str(e) or e.__class__.__name__
                 A.log(f"  ошибка: {err}")
+                if job.get("blog"):                  # админу: где и что сломалось + последние строки журнала
+                    with A.lock:
+                        tail = [x.get("text", "") for x in A.events if x.get("kind") == "log"][-15:]
+                    report.ev("error", where="поиск моментов" if job.get("long") else "монтаж",
+                              msg=err[:600], title=str(job.get("title") or job.get("clip", {}).get("title", ""))[:120],
+                              log=tail)
         if err == "cancel":                      # остановлено кнопкой: недоделанный файл убираем, клип в очередь
             CANCEL.update(jid=None, flag=False, procs=set())
             try:
@@ -2766,6 +2811,8 @@ def run(port=0, window=True, token=None, parent=0, start=""):
             A.log(msg)
         start_children()
     threading.Thread(target=worker, name="montage-worker", daemon=True).start()
+    report.ENABLED = mass_murchik()                  # отчёты админу — только из массового приложения МУРЧИК
+    report.ev("start")
     threading.Thread(target=auto_find_loop, daemon=True).start()
     threading.Thread(target=cleanup_loop, daemon=True).start()
     threading.Thread(target=daily_loop, daemon=True).start()

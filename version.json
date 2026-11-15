@@ -1,24 +1,25 @@
 {
-  "version": "2026.11.15 14:33",
-  "time": 1794745992.166628,
-  "notes": "Мурчик: 10 стилей монтажа по роликам ниши и «Свой у каждого» — окно выбора с настоящим кадром; разные ПК берут разные истории из одного видео",
+  "version": "2026.11.15 19:02",
+  "time": 1794762149.6146858,
+  "notes": "Баннер оффера теперь не меньше 25% экрана (во всю ширину); стили Мурчика с понятными названиями",
   "files": {
-    "montage.py": "3b01897d20cf2882939cadb4eacefdceec3aa00e6ddc632a0245be1e3e9ca39a",
+    "montage.py": "e9b19d647a29bcecc2cbbe42283f5daa31cf2b8c0b9bc3235d1fa79c916453a0",
     "review.py": "d467c90b91e88e43df7b517245648bc91dcc1ecbecfbaf131a32eea3bb235e21",
     "top5.py": "d70f586b96f327d8cbcc08d8959d494cf5cc450138498038d33afc8e9460cc67",
     "fixcam.py": "69f07fc46b8d3ae1cd5caeefe1a6325250f89c6c775384c9667d470c68e7dfc9",
     "clipfinder.py": "cfc0f40ec627eb3086312eb62b499e6382b78c8068702bd18dca40ed5d150645",
-    "updater.py": "07f50166fe1a653e6394fca1517e2363adf898232340cc0f23d1fcbf895d7478",
-    "webapp.py": "fafaa594bdb9b1687cce96aed6a02b5d53da878e6b4c64a90a9426142a050147",
-    "ui.html": "1a4686bb61eb9dbd9d63983ea37b6d4421577ae072a0e1b77d8cf644333408d7",
+    "updater.py": "e8f41dc517c76f8c4df2c3c0f53cdd275a0a3fcd8aa7ba7bb6bc669c1bdc28c1",
+    "webapp.py": "0694c28f3b3b5c4988e9f33e04b5d71b62cebc2730a0b494a8c44cbc8c08ea20",
+    "ui.html": "5bc742784a7097999ef00e4ff686d5858f99417d31fdd7c6b787a4fcd7bbf7c1",
     "logo_src.png": "e43b51bb73da86652be2c2adac971e5b39557d895d84a4c2449e9b99f95c1739",
     "highlights.py": "1e9b6942cfbc2de55466c191e0d50fe8db23d159e5ae78d98fcb826623e5091d",
     "accounts.py": "2e6681ac80f17dfcdb5983d0bc62011f27b2b2003bf6d5ad4117e5d68dc0f80c",
     "agents.py": "08803606e98c469d892fcde27d0a095b57f5753ccd4c426ba7cb1afaf53a44d3",
     "leaders.py": "06951d301f174cb68aed842807048974977038e49ae9439738ac155ab69a7dc1",
     "tgbot.py": "47b81efff03c52593fdf1a4f16058ed3f3be3d021a5cf60ff472b318b7db40bd",
-    "blogger.py": "a82eaf69094165c78b43dabbea5a0ec177cbf837dd382c2b20821408c8e16dbd",
+    "blogger.py": "34fba44e2df644b4693e794a3ae867385b6b93d484422bb029817973fac405d3",
     "reaction.py": "6080db0aad9baaee2c5a5c9d5485976f34a039b266297b22a4181b9da6152dab",
-    "ms_frame.jpg": "8feed06044da01bbf185516de08c2ee2d622d6565eb5c93c76ba8f5fe3b77230"
+    "ms_frame.jpg": "8feed06044da01bbf185516de08c2ee2d622d6565eb5c93c76ba8f5fe3b77230",
+    "report.py": "297f287d86e3679cda8f28b9ec89e6b8196a3efc85732e54d2d72fbc7eccb69f"
   }
 }

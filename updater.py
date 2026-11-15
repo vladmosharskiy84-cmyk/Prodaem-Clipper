@@ -20,7 +20,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 URL_FILE = BASE / "update_url.txt"
 STATE_FILE = BASE / "update_state.json"
-FILES = ["montage.py", "review.py", "top5.py", "fixcam.py", "clipfinder.py", "updater.py", "webapp.py", "ui.html", "logo_src.png", "highlights.py", "accounts.py", "agents.py", "leaders.py", "tgbot.py", "blogger.py", "reaction.py", "ms_frame.jpg"]
+FILES = ["montage.py", "review.py", "top5.py", "fixcam.py", "clipfinder.py", "updater.py", "webapp.py", "ui.html", "logo_src.png", "highlights.py", "accounts.py", "agents.py", "leaders.py", "tgbot.py", "blogger.py", "reaction.py", "ms_frame.jpg", "report.py"]
 
 
 def base_url():
@@ -33,7 +33,8 @@ def base_url():
         parts = url[len("https://github.com/"):].strip("/").split("/")
         if len(parts) >= 2:
             branch = parts[3] if len(parts) >= 4 and parts[2] == "tree" else "main"
-            url = f"https://raw.githubusercontent.com/{parts[0]}/{parts[1]}/{branch}/"
+            sub = "/".join(parts[4:]) if len(parts) > 4 and parts[2] == "tree" else ""   # папка канала (murchik)
+            url = f"https://raw.githubusercontent.com/{parts[0]}/{parts[1]}/{branch}/" + (sub + "/" if sub else "")
     if not (url.startswith("https://") or url.startswith("http://127.0.0.1")):
         return ""
     return url if url.endswith("/") else url + "/"
@@ -45,10 +46,11 @@ def pinned(url):
     pre = "https://raw.githubusercontent.com/"
     if not url.startswith(pre):
         return url
-    owner, repo, branch = url[len(pre):].strip("/").split("/")[:3]
+    owner, repo, branch, *sub = url[len(pre):].strip("/").split("/")
+    sub = "/".join(sub)
     try:
         info = json.loads(_get(f"https://api.github.com/repos/{owner}/{repo}/commits/{branch}").decode("utf-8"))
-        return f"{pre}{owner}/{repo}/{info['sha']}/"
+        return f"{pre}{owner}/{repo}/{info['sha']}/" + (sub + "/" if sub else "")
     except Exception:
         return url                               # API недоступен (лимит запросов) — работаем как раньше
 
@@ -179,9 +181,14 @@ def whats_new(mark=True):
     return {"version": ver, "notes": notes or "", "history": st.get("history", []), "fresh": fresh}
 
 
-def make_release(notes=""):
-    """Для автора: собирает папку release с файлами программы и version.json."""
-    rel = BASE / "release"
+MURCHIK_CHANNEL = "https://github.com/vladmosharskiy84-cmyk/Prodaem-Clipper/tree/main/murchik"
+
+
+def make_release(notes="", channel=""):
+    """Для автора: собирает папку release с файлами программы и version.json.
+    channel="murchik": отдельный канал приложения МУРЧИК (папка murchik/ в том же хранилище) —
+    массовые пользователи Мурчика получают только то, что выпущено именно для них."""
+    rel = BASE / ("release_" + channel if channel else "release")
     shutil.rmtree(rel, ignore_errors=True)
     rel.mkdir()
     files = {}
@@ -199,16 +206,18 @@ def make_release(notes=""):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "release":
+    if len(sys.argv) > 1 and sys.argv[1] in ("release", "release-murchik"):
         (BASE / "cache").mkdir(exist_ok=True)
+        channel = "murchik" if sys.argv[1] == "release-murchik" else ""
         try:
             notes = " ".join(sys.argv[2:]) or input("Что нового в этой версии (одной строкой): ").strip()
         except EOFError:
             notes = ""
-        folder, inf = make_release(notes)
+        folder, inf = make_release(notes, channel)
         print(f"\nГотово: версия {inf['version']}, файлов: {len(inf['files'])}")
         print(f"Папка: {folder}")
-        print("Загрузи ВСЕ файлы из этой папки в своё хранилище на GitHub (Add file -> Upload files -> Commit changes).")
+        print("Загрузи ВСЕ файлы из этой папки в своё хранилище на GitHub" + (" в папку murchik/" if channel else "")
+              + " (Add file -> Upload files -> Commit changes).")
         if sys.platform == "win32":
             import subprocess
             subprocess.run(["explorer", str(folder)])

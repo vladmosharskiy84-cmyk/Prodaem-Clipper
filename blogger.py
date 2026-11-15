@@ -99,7 +99,11 @@ def resolve_style(o, src):
             st["intro"] = "top_title"            # ч/б начало на ч/б ролике не видно
         if st["acc"] == "big_top" and st["subs"] == "phrase":
             st["acc"] = "inline"
-        st["name"] = "свой: " + "/".join(st[k] for k in ("frame", "grade", "intro", "subs"))
+        ru = {"card34": "окно 3:4", "card45": "окно 4:5", "cinema": "кинокадр", "full": "весь экран", "bw": "ч/б",
+              "warm": "тёплый", "cold": "холодный", "natural": "натуральный", "punch": "сочный", "stair": "слова лесенкой",
+              "none": "без заголовка", "bw_title": "ч/б начало + заголовок", "top_title": "тема сверху",
+              "word_chest": "по слову", "word_bottom": "слово внизу", "word_red": "красные слова", "phrase": "фраза"}
+        st["name"] = "Свой: " + " · ".join(ru.get(st[k], st[k]) for k in ("frame", "grade", "intro", "subs"))
     st["zgap"] = 1.3 + (h % 8) * 0.1             # как часто скачет крупность: свой ритм у каждого ПК
     fw, fh, fr = FRAMES[st["frame"]]
     st.update(fw=fw, fh=fh, fr=fr, fx=(W - fw) // 2, fy=(H - fh) // 2)
@@ -614,7 +618,7 @@ def pick_stories(words, n, length, cfg, say=print):
         r = requests.post("https://api.anthropic.com/v1/messages",
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
                           json={"model": cfg.get("story_model") or cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 10000,
-                                "messages": [{"role": "user", "content": STORY_PROMPT.format(n=min(20, n * 2), a=a, b=b, text=chunk)}]},
+                                "messages": [{"role": "user", "content": STORY_PROMPT.format(n=min(24, n * 3), a=a, b=b, text=chunk)}]},
                           timeout=240)
         if r.status_code != 200:
             raise Stop(f"Claude ответил {r.status_code}: {r.text[:200]}")
@@ -624,8 +628,8 @@ def pick_stories(words, n, length, cfg, say=print):
             stories += got
         else:
             say("Claude ответил не по формату на часть видео, пропускаю её: " + out[:120].replace("\n", " "))
-    # Кандидатов вдвое больше, чем нужно. Каждый ПК берёт свою подборку: к оценке добавляется своя «случайность»
-    # до 2.5 балла, поэтому друзья, режущие одно видео, чаще берут разные истории (самые сильные всё равно в почёте).
+    # Кандидатов втрое больше, чем нужно. Каждый ПК берёт свою подборку: к оценке добавляется своя «случайность»
+    # до 4 баллов, поэтому друзья, режущие одно видео, чаще берут разные истории (самые сильные всё равно в почёте).
     import hashlib
 
     def rank(x):
@@ -633,7 +637,7 @@ def pick_stories(words, n, length, cfg, say=print):
             j = int(hashlib.md5((m.machine_salt() + "story" + str(int(float(x.get("start") or 0)))).encode()).hexdigest(), 16)
         except Exception:
             j = 0
-        return -(float(x.get("score") or 0) + (j % 250) / 100)
+        return -(float(x.get("score") or 0) + (j % 400) / 100)
     ok = []
     for st in sorted(stories, key=rank):
         try:
