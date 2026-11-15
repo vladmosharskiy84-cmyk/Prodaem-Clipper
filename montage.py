@@ -1180,7 +1180,6 @@ Style: Sub,{sfont},{cfg['sub_size']},{s_fg},{s_fg},{s_tail.replace(",1,0,0,0,100
 Style: Tag,{font},40,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,{bold},0,0,0,100,100,0,0,3,10,0,5,0,0,0,1
 Style: Acc,{font},{cfg['sub_size']},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,{bold},0,0,0,100,100,0,0,1,7,0,5,0,0,0,1
 Style: AccBox,{font},{cfg['sub_size']},&HFF000000,&HFF000000,&H00000000,&HFF000000,{bold},0,0,0,100,100,0,0,3,13,0,5,0,0,0,1
-
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """

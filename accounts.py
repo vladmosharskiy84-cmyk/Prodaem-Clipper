@@ -644,6 +644,19 @@ def hot_streamers(videos, s, days=21):
     return hot
 
 
+def cold_streamers(videos, s, days=21, min_videos=4):
+    """Стримеры, у которых за 3 недели 4+ ролика и ни один не дошёл до порога выплаты: их клипы — в конец очереди."""
+    cnt, cut = {}, time.time() - days * 86400
+    for v in videos:
+        st = (v.get("local") or {}).get("streamer")
+        if not st or (v["ts"] and v["ts"] < cut):
+            continue
+        need = v.get("min") or s.get("min_views", 6000)
+        n, ok = cnt.get(st, (0, 0))
+        cnt[st] = (n + 1, ok + (1 if v["views"] >= need else 0))
+    return {st: n for st, (n, ok) in cnt.items() if n >= min_videos and ok == 0}
+
+
 def best_slots(videos, n=3, min_videos=20, min_days=7):
     """Часы выхода с лучшими просмотрами по факту. None, пока данных мало (меньше 20 роликов или недели)."""
     vs = [v for v in videos if v["ts"] and v["ts"] >= time.time() - 30 * 86400]
@@ -777,6 +790,7 @@ def _build(videos, handles, errors, cfg, say, deep, ai, offers, old=False):
     # что залетает — того больше; время выхода — по факту
     s = load_settings()
     s["hot"] = hot_streamers(videos, s)
+    s["cold"] = cold_streamers(videos, s)
     slots = best_slots(videos)
     if slots and s.get("auto_slots", True):
         if slots != s.get("slots"):

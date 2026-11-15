@@ -377,7 +377,7 @@ def queue_data():
                     "title": p.get("title", ""), "views": int(p.get("twitch_views") or 0),
                     "dur": int(p.get("duration") or 0), "own": bool(p.get("own")),
                     "score": p.get("score"), "reason": p.get("reason", ""), "vod": p.get("source") == "vod",
-                    "hot": int(p.get("hot") or 0)})
+                    "hot": int(p.get("hot") or 0), "cold": int(p.get("cold") or 0)})
     return {"items": out, "ver": A.queue_ver}
 
 
@@ -1323,6 +1323,15 @@ def ask_files(kind):
     return box["files"]
 
 
+def phone_on():
+    """Клиппер сейчас на связи с мини-аппом в Telegram (тогда закрытое окно не выключает программу)."""
+    try:
+        import miniapp
+        return bool(miniapp.STATE.get("on"))
+    except Exception:
+        return False
+
+
 def dialog_loop():
     """Главный поток: ждёт просьб показать окно выбора файлов и следит, не закрыли ли окно программы."""
     while not A.quit.is_set():
@@ -1338,7 +1347,15 @@ def dialog_loop():
                 else:
                     A.parent_dead = 0
             elif time.time() - A.last_poll > 25 and not busy and not children_busy():
+                if phone_on():                   # на связи с телефоном: окно закрыли — работаем в фоне
+                    if not getattr(A, "bg_said", False):
+                        A.bg_said = True
+                        A.log("Окно закрыто — клиппер работает в фоне для телефона. Выключить: кнопка «Выключить» "
+                              "в программе или в мини-аппе. Открыть окно снова — ярлык на рабочем столе.")
+                    continue
                 A.quit.set()                     # окно закрыли и монтажа нет нигде: программа завершается
+            elif not ROLE["child"]:
+                A.bg_said = False
             continue
         try:
             import tkinter as tk
@@ -2305,6 +2322,7 @@ def update(d):
     return {}
 
 
+
 def look(d):
     with A.lock:
         if "style" in d:
@@ -2758,6 +2776,7 @@ def run(port=0, window=True, token=None, parent=0, start=""):
         tgbot.start(A.log)
     except Exception as e:
         A.log(f"телеграм-бот не запустился: {e}")
+    # мини-апп в Telegram отложен (Влад, 15.11): miniapp.start не вызываем
 
     threading.Thread(target=prep_worker, daemon=True).start()
 

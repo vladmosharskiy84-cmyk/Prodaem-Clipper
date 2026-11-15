@@ -97,15 +97,18 @@ def load_queue(st):
                 continue
             p = dict(p, file=str(raw))
             found.append(p)
-    try:                                          # стримеры, чьи ролики набрали порог выплаты, — первыми
-        hot = json.loads((BASE / "analytics" / "settings.json").read_text(encoding="utf-8")).get("hot") or {}
-    except Exception:
-        hot = {}
+    try:                                          # стримеры, чьи ролики набрали порог выплаты, — первыми,
+        an = json.loads((BASE / "analytics" / "settings.json").read_text(encoding="utf-8"))
+    except Exception:                             # а те, у кого 4+ ролика и ни одного оплаченного, — последними
+        an = {}
+    hot, cold = an.get("hot") or {}, an.get("cold") or {}
     for p in found:
         if p.get("streamer") in hot:
             p["hot"] = hot[p["streamer"]]
-    found.sort(key=lambda p: (1 if p.get("hot") else 0, p.get("found_at", "")[:10], p.get("score", 0),
-                              p.get("twitch_views", 0)), reverse=True)
+        elif p.get("streamer") in cold:
+            p["cold"] = cold[p["streamer"]]
+    found.sort(key=lambda p: (1 if p.get("hot") else (-1 if p.get("cold") else 0), p.get("found_at", "")[:10],
+                              p.get("score", 0), p.get("twitch_views", 0)), reverse=True)
     return items + found
 
 

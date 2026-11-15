@@ -218,6 +218,8 @@ input[type=range]{flex:1;accent-color:var(--a1);min-width:140px}
 .newsold{margin-top:16px}.newsold summary{cursor:pointer;color:var(--mut);font-size:13px}
 @keyframes pop{from{transform:translateY(16px) scale(.97);opacity:0}}
 .dlg h3{font:700 18px var(--display);margin:0 0 4px;letter-spacing:.02em}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;align-self:center;width:max-content}
+.seg button{border:0;background:none;color:var(--mut);font:600 12.5px var(--body);padding:7px 14px;cursor:pointer}.seg button.on{color:#fff;background:linear-gradient(110deg,var(--a1),var(--a2))}
 .lookbtn em{font-style:normal;color:var(--mut);font-weight:500}
 .field.locked{opacity:.45;pointer-events:none}
 .dlg.lib{width:min(1100px,100%);padding:0;overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 40px)}
@@ -435,6 +437,7 @@ body.leaving .app{opacity:0;transform:scale(.985);transition:opacity .35s,transf
     <button class="btn" id="upd">Проверить обновления</button>
     <button class="btn" id="news" title="Что поменялось в обновлениях">Что нового</button>
     <button class="btn" id="keys">Настройки и ключи</button>
+    <button class="btn" id="quitbtn" style="--k:var(--bad)" title="Выключить клиппер совсем (закрытое окно при связи с телефоном его не выключает)">Выключить</button>
   </header>
 
   <div class="grid">
@@ -580,7 +583,7 @@ function renderList(){const L=$("#list");if(!S.items.length){L.innerHTML='<div c
     b.style.animationDelay=Math.min(i,12)*35+"ms";
     if(it.reason)b.title=it.reason;
     const meta=it.vod?`<span class="v sc">★ ${it.score??"–"}</span><br>`:it.own?"":`<span class="v">${fmtV(it.views)}</span> просм.<br>`;
-    b.innerHTML=`<span class="av">${esc((it.streamer||"?")[0].toUpperCase())}</span><span style="min-width:0"><b>${it.hot?`<span title="его ролики уже набирали ${fmtV(it.hot)}: берём в первую очередь">🔥</span> `:""}${esc(it.streamer||"своё видео")}${it.vod?' <i class="vtag">стрим</i>':""}</b><em>${esc(it.title)}</em></span><span class="meta">${meta}${it.dur} с</span>`;
+    b.innerHTML=`<span class="av">${esc((it.streamer||"?")[0].toUpperCase())}</span><span style="min-width:0"><b>${it.hot?`<span title="его ролики уже набирали ${fmtV(it.hot)}: берём в первую очередь">🔥</span> `:it.cold?`<span title="${it.cold} его роликов за 3 недели — ни один не дошёл до оплаты: внизу очереди" style="opacity:.6">🧊</span> `:""}${esc(it.streamer||"своё видео")}${it.vod?' <i class="vtag">стрим</i>':""}</b><em>${esc(it.title)}</em></span><span class="meta">${meta}${it.dur} с</span>`;
     b.onclick=()=>openClip(it.id);L.appendChild(b);});markOn();}
 function markOn(){$$(".clip").forEach(e=>e.classList.toggle("on",e.dataset.id===S.cur));const on=$(".clip.on");on&&on.scrollIntoView({block:"nearest",behavior:"smooth"});}
 function showEmpty(){donePreview();const v=$("#vid");v.pause();v.removeAttribute("src");v.hidden=true;$("#frame").hidden=true;S.clip=null;S.rects=[];S.content=null;S.cap=null;drawBoxes();
@@ -920,6 +923,9 @@ function showNews(r,fresh){if(!r||!r.version){toast("Обновлений ещё
   const old=(r.history||[]).filter(h=>h.version!==r.version).slice(0,8);
   modal(`<h3>${fresh?"Обновление установлено":"Что нового"}</h3><p class="sub">Версия ${esc(r.version)}</p>${newsList(r.notes)}`
     +(old.length?`<details class="newsold"><summary>Прошлые обновления</summary>${old.map(h=>`<p class="label" style="margin:12px 0 4px">${esc(h.version)}</p>${newsList(h.notes)}`).join("")}</details>`:""),"narrow");}
+$("#quitbtn").onclick=async()=>{if(!confirm("Выключить клиппер? Поиск, монтаж и управление с телефона остановятся до следующего запуска."))return;
+  const r=await api("quit");if(r.busy)return toast("Сейчас идёт монтаж. Дождись конца и нажми ещё раз",false);
+  toast("Клиппер выключается");setTimeout(()=>window.close(),800);};
 $("#news").onclick=async()=>{const r=await api("update",{act:"whatsnew"});if(r.error)return toast(r.error,false);showNews(r,false);};
 setTimeout(async()=>{try{const r=await api("update",{act:"whatsnew"});if(r&&r.fresh&&r.notes)showNews(r,true);}catch(e){}},1500);
 setTimeout(async()=>{const r=await api("update",{act:"check"});if(r.state==="ready"){S.updReady=true;$("#upd").innerHTML='<span class="dot"></span>Установить обновление';toast(r.text);}},6000);

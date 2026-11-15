@@ -25,10 +25,42 @@ API = "https://api.twitch.tv/helix"
 
 
 def load_config():
-    cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    try:
+        cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig"))
+    except Exception:
+        sys.exit("config.json пустой или повреждён: открой «Настройки и ключи» и заново впиши ключи Twitch.")
     if "ВСТАВЬ" in cfg["client_id"] or "ВСТАВЬ" in cfg["client_secret"]:
         sys.exit("Открой config.json и вставь свои Client ID и Client Secret.")
     return cfg
+
+
+def load_seen():
+    """Уже скачанные клипы. Если seen.json пустой или битый (программу закрыли посреди записи),
+    собираем список заново из passports.jsonl — иначе поиск падал бы каждый раз."""
+    try:
+        return set(json.loads(SEEN_FILE.read_text(encoding="utf-8")))
+    except FileNotFoundError:
+        return set()
+    except Exception:
+        seen = set()
+        try:
+            for line in PASSPORTS_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
+                try:
+                    seen.add(json.loads(line)["clip_id"])
+                except Exception:
+                    continue
+        except OSError:
+            pass
+        print(f"seen.json был повреждён — восстановил по паспортам клипов ({len(seen)} шт.)")
+        save_seen(seen)
+        return seen
+
+
+def save_seen(seen):
+    """Запись через временный файл: при выключении ПК посреди записи старый seen.json останется целым."""
+    tmp = SEEN_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(sorted(seen)), encoding="utf-8")
+    os.replace(tmp, SEEN_FILE)
 
 
 def load_streamers():
@@ -115,7 +147,7 @@ def main():
     headers = {"Client-Id": cfg["client_id"],
                "Authorization": f"Bearer {get_token(cfg)}"}
 
-    seen = set(json.loads(SEEN_FILE.read_text(encoding="utf-8"))) if SEEN_FILE.exists() else set()
+    seen = load_seen()
     talk = {c.lower() for c in cfg["talk_categories"]}
     cs = {c.lower() for c in cfg["cs_categories"]}
 
@@ -176,6 +208,7 @@ def main():
                 "clip_id": c["id"], "streamer": login, "title": c["title"],
                 "category": cat, "format": kind, "twitch_views": c["view_count"],
                 "duration": c.get("duration"), "created_at": c["created_at"],
+                "video_id": c.get("video_id") or "", "vod_offset": c.get("vod_offset"),   # где клип в записи: для чата
                 "url": c["url"], "file": str(target.relative_to(BASE)),
                 "found_at": now.strftime(fmt),
             }
@@ -184,7 +217,7 @@ def main():
             with PASSPORTS_FILE.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(passport, ensure_ascii=False) + "\n")
             seen.add(c["id"])
-            SEEN_FILE.write_text(json.dumps(sorted(seen)), encoding="utf-8")
+            save_seen(seen)
             new += 1
         total_new += new
         print(f"{login}: клипов за {cfg['hours']} ч: {len(clips)}, "
