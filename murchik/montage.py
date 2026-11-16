@@ -1221,7 +1221,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if e - s < 0.08:
             e = s + 0.08
         gap = (w["s"] - words[i - 1]["e"]) if i else 9.0
-        timed.append((s, e, txt, gap, w["t"][-1:] in ".!?…,", bool(w.get("acc"))))
+        timed.append((s, e, txt, gap, w["t"][-1:] in ".!?…,", bool(w.get("acc") or w.get("mark"))))
     lines += sub_events(timed, anim, sub_y, cfg, st_, accent, starts)
     if hook:                                         # крючок на первые секунды: заголовок с плашкой на главном слове
         lines += hook_events(hook, st_.get("accent_box") or accent, cfg, keep_until=total)
@@ -1237,14 +1237,15 @@ SUB_ANIMS = {"soft": "По слову, мягкая тень", "pop": "Выпр�
 def sub_events(timed, anim, sub_y, cfg, st_, accent, banner_starts):
     """Строки субтитров для выбранной анимации. timed: [(начало, конец, слово, пауза перед ним, конец фразы)]."""
     bgr = lambda c: "&H{:02X}{:02X}{:02X}&".format(c[2], c[1], c[0])
-    x, y, base = W // 2, sub_y, cfg["sub_size"]
+    x, y, base = int(cfg.get("sub_x") or W // 2), sub_y, cfg["sub_size"]
     out = []
     if anim == "none":                               # ролик без субтитров: речь всё равно нужна для вырезки пауз
         return out
     if anim == "soft":                               # одно слово, чёткое, мягкая тень, лёгкий подъём при появлении
         soft_c = bgr(st_.get("fg") or (255, 255, 255)) if st_.get("look") else "&HFFFFFF&"
-        for s, e, txt, *_ in timed:
+        for s, e, txt, *rest_ in timed:
             size = int(base * 1.1) if len(txt) <= 9 else int(base * 1.1 * 9 / len(txt))
+            mk_c = bgr(st_.get("hl") or (255, 230, 0)) if len(rest_) > 2 and rest_[2] else soft_c
             if s <= 0.001:                           # слово с самого начала (и кадр-пример): сразу на месте
                 a, p_sh, p_tx = rf"\fs{size}\bord0\shad0", rf"\pos({x},{y + 8})", rf"\pos({x},{y})"
             else:
@@ -1253,13 +1254,17 @@ def sub_events(timed, anim, sub_y, cfg, st_, accent, banner_starts):
             out.append(f"Dialogue: 0,{ass_time(s)},{ass_time(e)},Sub,,0,0,0,,"
                        rf"{{{p_sh}{a}\c&H000000&\alpha&H48&\blur14}}{txt}")
             out.append(f"Dialogue: 1,{ass_time(s)},{ass_time(e)},Sub,,0,0,0,,"
-                       rf"{{{p_tx}{a}\c{soft_c}}}{txt}")
+                       rf"{{{p_tx}{a}\c{mk_c}}}{txt}")
         return out
     if st_.get("accent_box"):                        # Дота-подача: фраза, ключевые слова на цветных плашках
         return accent_events(timed, sub_y, cfg, st_, banner_starts)
     if anim != "karaoke":
-        for s, e, txt, *_ in timed:
+        for s, e, txt, *rest_ in timed:
             size = base if len(txt) <= 11 else int(base * 11 / len(txt))
+            mk = bool(rest_[2]) if len(rest_) > 2 else False
+            mcol = rf"\c{bgr(st_.get('hl') or (255, 230, 0))}" if mk else ""
+            if mk:
+                size = int(size * 1.12)
             if anim == "bounce":
                 fx = (rf"{{\move({x},{y - 80},{x},{y},0,150)\fs{size}\fscx118\fscy118\t(0,150,\fscx100\fscy100)"
                       rf"\t(150,220,\fscx104\fscy92)\t(220,300,\fscx100\fscy100)}}")
@@ -1271,6 +1276,8 @@ def sub_events(timed, anim, sub_y, cfg, st_, accent, banner_starts):
                       rf"\t(0,90,\fscx100\fscy100)\t(0,250,\blur2)}}")
             else:
                 fx = rf"{{\pos({x},{y})\fs{size}\fscx85\fscy85\t(0,90,\fscx100\fscy100)}}"
+            if mcol:
+                fx = fx[:-1] + mcol + "}"
             out.append(f"Dialogue: 1,{ass_time(s)},{ass_time(e)},Sub,,0,0,0,,{fx}{txt}")
         return out
     # фраза из 2–4 слов на экране, слово, которое сейчас звучит, крупнее и другого цвета
@@ -1313,7 +1320,8 @@ def sub_events(timed, anim, sub_y, cfg, st_, accent, banner_starts):
                     parts.append(rf"{{\c{bgr(hl)}{bx}\fscx100\fscy100\t(0,80,\fscx112\fscy112)}}{t[2]}")
                 else:
                     bx = rf"\3c{bgr(box)}" if box else ""
-                    parts.append(rf"{{\c{bgr(rest)}{bx}\fscx100\fscy100}}{t[2]}")
+                    col = hl if (len(t) > 5 and t[5] and not hl_box) else rest
+                    parts.append(rf"{{\c{bgr(col)}{bx}\fscx100\fscy100}}{t[2]}")
             intro = rf"\fscx90\fscy90\t(0,90,\fscx100\fscy100)" if k == 0 else ""
             fx = rf"{{\pos({x},{y})\fs{size}{intro}}}"
             out.append(f"Dialogue: 1,{ass_time(s)},{ass_time(e2)},Sub,,0,0,0,,{fx}" + " ".join(parts))
@@ -1375,6 +1383,9 @@ def word_accents(clip, words, offset=0.0):
     for i in order[:limit]:
         if score[i] >= 1.5:
             out[i]["acc"] = True
+    for w in out:                                    # человек в редакторе сам отметил или снял выделение
+        if "mark" in w:
+            w["acc"] = bool(w["mark"])
     return out
 
 
@@ -1383,7 +1394,7 @@ def accent_events(timed, sub_y, cfg, st_, banner_starts):
     Звучащее слово чуть выпрыгивает. Плашки рисуются отдельным слоем точно под буквами."""
     bgr = lambda c: "&H{:02X}{:02X}{:02X}&".format(c[2], c[1], c[0])
     box = st_["accent_box"]
-    x, y, base = W // 2, sub_y, cfg["sub_size"]
+    x, y, base = int(cfg.get("sub_x") or W // 2), sub_y, cfg["sub_size"]
     chunks, cur = [], []
     for item in timed:
         s, e, txt, gap, endp = item[:5]
@@ -3105,6 +3116,8 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
     sub_auto = sub_y                                 # где субтитры встали бы сами
     if force and force.get("sub_y"):                 # положение субтитров задал человек
         sub_y = int(force["sub_y"])
+    if force and force.get("sub_x"):                 # и по ширине (перетащили надпись в сторону)
+        cfg = dict(cfg, sub_x=max(int(W * .15), min(int(W * .85), int(force["sub_x"]))))
     ass = CACHE / f"subs_{os.getpid()}_{threading.get_ident()}.ass"   # у примера и монтажа свои файлы
     if preview:
         # один кадр с этой раскладкой: окна, пример субтитров и место, куда встанет баннер.
@@ -3352,7 +3365,13 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
     if (force or {}).get("teaser", cfg.get("teaser", True)):
         bans = [(b0, b0 + ban_dur) for b0 in [sp + k * ban_dur for k, sp in enumerate(split_out)]]
         try:
-            teaser = add_teaser(out, bans)
+            ta = (force or {}).get("teaser_at")
+            if ta is not None:                       # момент-крючок выбран в редакторе: переводим в секунду готового ролика
+                o = src_to_out(float(ta), segs)
+                o += ban_dur * sum(1 for sp in split_out if o >= sp - 1e-6)
+                teaser = add_teaser(out, bans, at=o)
+            else:
+                teaser = add_teaser(out, bans)
         except Exception as e:
             print(f"  начало с пика пропущено: {e}")
     if teaser:
@@ -3367,7 +3386,7 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
                 sum(w["e"] - w["s"] for w in words) / max(content, 0.1), 2)}
 
 
-def add_teaser(out, bans, length=2.0):
+def add_teaser(out, bans, length=2.0, at=None):
     """Первая секунда: если самый громкий момент ролика не в начале, его 2 секунды ставятся в самое начало,
     а дальше ролик идёт как был. Баннер и первые 3 секунды не берутся. Возвращает добавленные секунды или 0."""
     import numpy as np
@@ -3386,14 +3405,19 @@ def add_teaser(out, bans, length=2.0):
     ok[int((dur - length - 0.5) * 10):] = False
     for b0, b1 in bans:
         ok[max(0, int((b0 - length - 0.3) * 10)):int((b1 + 0.3) * 10)] = False              # не баннер
-    if not ok.any():
-        return 0.0
-    med = float(np.median(db))
-    head = float(win[:30].max())
-    i = int(np.argmax(np.where(ok, win, -999)))
-    if win[i] - med < 6 or win[i] - head < 3:       # пик не выделяется или начало и так сильное
-        return 0.0
-    st = max(3.0, i / 10 - 0.6)                     # чуть раньше пика, чтобы попала завязка
+    if at is not None:                              # место выбрал человек: берём как есть
+        st = max(0.0, min(float(at), dur - length - 0.1))
+        if st < 0.5:
+            return 0.0                              # это и так начало ролика
+    else:
+        if not ok.any():
+            return 0.0
+        med = float(np.median(db))
+        head = float(win[:30].max())
+        i = int(np.argmax(np.where(ok, win, -999)))
+        if win[i] - med < 6 or win[i] - head < 3:       # пик не выделяется или начало и так сильное
+            return 0.0
+        st = max(3.0, i / 10 - 0.6)                     # чуть раньше пика, чтобы попала завязка
     cut = CACHE / f"teaser_{os.getpid()}_{threading.get_ident()}.mp4"
     full = out.with_name(out.stem + "_tz.mp4")
     r = run(["ffmpeg", "-v", "error", "-y", "-i", str(out), "-filter_complex",

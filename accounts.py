@@ -899,6 +899,99 @@ def last_report():
         return None
 
 
+# ---------- шанс клипа пройти порог выплаты (для очереди) ----------
+CHANCE = DIR / "chance.json"
+CH_K = 5                     # сглаживание: стример с 1-2 роликами почти не сдвигает шанс от среднего
+CH_DUR = (("<20", 0, 20, "до 20 с"), ("20-35", 20, 35, "20–35 с"), ("35-60", 35, 60, "35–60 с"), ("60+", 60, 1e9, "больше минуты"))
+
+
+def _ch_dur(sec):
+    for k, a, b, _ in CH_DUR:
+        if a <= sec < b:
+            return k
+    return "60+"
+
+
+def chance_model(say=None, only=None):
+    """Что уже проходило порог выплаты: по просмотрам с сервера HQ (analytics/hq_views.json) и записям
+    готовых роликов клиппера (clips/ready/*/*.json — они остаются и после очистки видео). Пишет analytics/chance.json."""
+    srv = json.loads((DIR / "hq_views.json").read_text(encoding="utf-8"))
+    offs, accs = srv.get("offers") or {}, srv.get("accounts") or {}
+    s = load_settings()
+    videos = []
+    for v in srv.get("videos") or []:
+        a = accs.get(v.get("acc")) or {}
+        if a.get("on") is False or (only is not None and str(v.get("acc", "")).lower() not in only):
+            continue                             # только аккаунты этого профиля
+        need = int((offs.get(a.get("offer")) or {}).get("min") or 0) or int(s.get("min_views") or 6000)
+        videos.append({"id": str(v["id"]), "acc": v["acc"], "desc": v.get("desc") or "", "views": int(v.get("views") or 0),
+                       "dur": float(v.get("dur") or 0), "ts": int(v.get("ts") or 0), "min": need})
+    outs = []
+    for j in (BASE / "clips" / "ready").glob("*/*.json"):
+        try:
+            p = json.loads(j.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        d = float(p.get("duration") or 0)
+        if d <= 0:
+            continue
+        outs.append({"file": str(j), "dur": d, "mtime": j.stat().st_mtime, "title": p.get("final_title") or p.get("title", ""),
+                     "streamer": str(p.get("streamer") or "").lower(), "style": p.get("style", ""), "format": p.get("format", ""),
+                     "clip_id": p.get("clip_id", ""), "source": p.get("source", ""),
+                     "content": max(1.0, d - float(p.get("banner_len") or 0)), "category": p.get("category") or ""})
+    match_local(videos, outs)
+    mt = [v for v in videos if v.get("local")]
+    if len(mt) < 15:
+        raise Stop("мало роликов связано с клиппером, чтобы считать шанс")
+    by = {"streamer": {}, "dur": {}, "category": {}}
+    ok_all = 0
+    for v in mt:
+        o, ok = v["local"], int(v["views"] >= v["min"])
+        ok_all += ok
+        for k, val in (("streamer", o["streamer"]), ("dur", _ch_dur(o["content"])), ("category", o["category"])):
+            if val:
+                n, g = by[k].get(val, (0, 0))
+                by[k][val] = (n + 1, g + ok)
+    model = {"time": time.time(), "n": len(mt), "ok": ok_all, "base": max(0.01, ok_all / len(mt)),
+             "by": {k: {a: [n, g] for a, (n, g) in d.items()} for k, d in by.items()}}
+    DIR.mkdir(parents=True, exist_ok=True)
+    CHANCE.write_text(json.dumps(model, ensure_ascii=False, indent=1), encoding="utf-8")
+    if say:
+        say(f"шанс клипов: связано {len(mt)} роликов, прошли порог {ok_all}")
+    return model
+
+
+def chance_for(model, streamer, dur, category=""):
+    """Шанс клипа пройти порог: среднее по аккаунтам, сдвинутое стримером, длиной и игрой.
+    Возвращает {"p": 0..1, "x": во сколько раз выше среднего, "lvl": hi|mid|lo, "why": [...]}."""
+    base, by = model["base"], model["by"]
+
+    def rate(kind, key):
+        n, g = (by.get(kind) or {}).get(key, (0, 0))
+        return (g + CH_K * base) / (n + CH_K) / base, n, g
+
+    why, x = [], 1.0
+    st_, n, g = rate("streamer", str(streamer or "").lower())
+    x *= st_
+    if n:
+        why.append(f"{streamer}: {g} из {n} роликов прошли порог")
+    else:
+        why.append(f"{streamer or 'стример'}: роликов ещё не было")
+    dk = _ch_dur(float(dur or 0))
+    dr, n, g = rate("dur", dk)
+    x *= dr
+    lab = next(l for k, a, b, l in CH_DUR if k == dk)
+    if n:
+        why.append(f"длина {lab}: {g} из {n} прошли")
+    if category:
+        cr, n, g = rate("category", category)
+        x *= cr ** 0.5                          # игра частично повторяет стримера: вес меньше
+        if n >= 5:
+            why.append(f"{category}: {g} из {n}")
+    p = max(0.01, min(0.6, base * x))
+    return {"p": round(p, 3), "x": round(x, 2), "lvl": "hi" if x >= 1.6 else ("lo" if x <= 0.6 else "mid"), "why": why}
+
+
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()

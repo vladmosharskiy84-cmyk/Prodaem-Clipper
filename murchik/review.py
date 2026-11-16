@@ -670,7 +670,7 @@ def build_force(fmt_key, rects):
 
 
 def make_preview(clip, fmt_key, rects, captions, sub_y, t, png, cfg, style=None, font=None, content=None, video=0,
-                 sub_anim=None, zoom=True, sub_look=None):
+                 sub_anim=None, zoom=True, sub_look=None, sub_x=None):
     """Быстро рисует один кадр: как ролик будет выглядеть с этой камерой, форматом и субтитрами.
     Возвращает {"png", "sub_y", "sub_auto"} или None."""
     fmt, force, want_satis = build_force(fmt_key, rects)
@@ -680,6 +680,8 @@ def make_preview(clip, fmt_key, rects, captions, sub_y, t, png, cfg, style=None,
         force["captions"] = False
     if sub_y:
         force["sub_y"] = int(sub_y)
+    if sub_x:
+        force["sub_x"] = int(sub_x)
     force.update(style=style, font=font, content=content, sub_anim=sub_anim, zoom=zoom, sub_look=sub_look or "")
     clip = Path(clip)
     sat = m.pick_satis(clip, cfg, force=True) if want_satis else None
@@ -707,6 +709,8 @@ def run_job(job, cfg, enc, log=print):
         force["captions"] = False
     if job.get("sub_y"):
         force["sub_y"] = int(job["sub_y"])           # положение субтитров задано вручную
+    if job.get("sub_x"):
+        force["sub_x"] = int(job["sub_x"])           # и по ширине
     force.update(style=job.get("style"), font=job.get("font"), content=job.get("content"),
                  sub_anim=job.get("sub_anim"), zoom=job.get("zoom", True), teaser=job.get("teaser", True),
                  sub_look=job.get("sub_look") or "")
@@ -714,7 +718,7 @@ def run_job(job, cfg, enc, log=print):
         force["banner"] = job["banner"]              # баннер оффера, выбранный в окне для этого клипа
     edit = job.get("edit") or None                   # правки из редактора: обрезка, вырезанные куски, баннер, субтитры
     if edit:
-        for k in ("start_at", "end_at", "cuts", "banner_at", "words", "teaser"):
+        for k in ("start_at", "end_at", "cuts", "banner_at", "words", "teaser", "teaser_at"):
             if edit.get(k) is not None:
                 force[k] = edit[k]
     sat = m.pick_satis(clip, cfg, force=True) if want_satis else None
@@ -765,7 +769,7 @@ def run_job(job, cfg, enc, log=print):
         except Exception:
             prev = {}
     p.update(res)
-    p["job"] = {k: job.get(k) for k in ("fmt_key", "rects", "captions", "sub_y", "style", "font", "content",
+    p["job"] = {k: job.get(k) for k in ("fmt_key", "rects", "captions", "sub_y", "sub_x", "style", "font", "content",
                                         "sub_anim", "zoom", "banner", "title", "streamer", "teaser", "sub_look")}
     p["edit"] = edit or prev.get("edit")
     if edit:

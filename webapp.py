@@ -370,9 +370,51 @@ def banners_short():
     return out
 
 
+CH = {"model": None, "mt": None, "busy": False, "pull": 0.0}
+
+
+def chance_model():
+    """Шанс клипов пройти порог выплаты (accounts.chance_model). Пересчёт в фоне, когда сервер принёс новые просмотры."""
+    try:
+        mt = (BASE / "analytics" / "hq_views.json").stat().st_mtime
+    except OSError:
+        mt = 0.0                                 # профиль ещё не брал цифры: возьмём с сервера
+    if CH["model"] is None and CH["mt"] is None:
+        try:
+            CH["model"] = json.loads((BASE / "analytics" / "chance.json").read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    stale = time.time() - mt > 3 * 3600 and time.time() - CH["pull"] > 1800 and bool(hq_base()[0])
+    if (mt != CH["mt"] or stale) and not CH["busy"]:
+        CH["busy"], CH["mt"] = True, mt
+
+        def work():
+            try:
+                if stale:                        # цифры старше 3 часов: берём свежие с сервера HQ
+                    CH["pull"] = time.time()
+                    try:
+                        hq_views(fresh=True)
+                        CH["mt"] = (BASE / "analytics" / "hq_views.json").stat().st_mtime
+                    except Exception:
+                        pass
+                import accounts
+                CH["model"] = accounts.chance_model(only=my_accounts())
+                with A.lock:
+                    A.queue_ver += 1
+                A.emit("queue", ver=A.queue_ver)
+            except Exception as e:
+                print(f"шанс клипов не посчитался: {e}")
+            CH["busy"] = False
+        threading.Thread(target=work, daemon=True).start()
+    return CH["model"]
+
+
 def queue_data():
     with A.lock:
         items = list(A.items)
+    model = chance_model()
+    if model:
+        import accounts
     out = []
     for p in items:
         out.append({"id": p["clip_id"], "streamer": "СВОЁ" if p.get("own") else p.get("streamer", ""),
@@ -380,7 +422,12 @@ def queue_data():
                     "dur": int(p.get("duration") or 0), "own": bool(p.get("own")),
                     "score": p.get("score"), "reason": p.get("reason", ""), "vod": p.get("source") == "vod",
                     "hot": int(p.get("hot") or 0), "cold": int(p.get("cold") or 0)})
-    return {"items": out, "ver": A.queue_ver}
+        if model and not p.get("own") and p.get("source") != "vod":
+            try:
+                out[-1]["chance"] = accounts.chance_for(model, p.get("streamer", ""), p.get("duration") or 0, p.get("category") or "")
+            except Exception:
+                pass
+    return {"items": out, "ver": A.queue_ver, "chance_base": round(model["base"], 3) if model else None}
 
 
 def open_clip(cid):
@@ -407,7 +454,7 @@ def open_clip(cid):
     return {"id": cid, "w": w, "h": h, "dur": info["dur"], "streamer": p.get("streamer", ""),
             "title": p.get("title", ""), "views": int(p.get("twitch_views") or 0), "own": bool(p.get("own")),
             "fmt": guess, "rects": rects, "content": content, "cap": cap, "from_last": from_last,
-            "sub_pos": A.st.get("sub_pos", {}), "video_ok": ext in (".mp4", ".m4v", ".webm", ".mov"),
+            "sub_pos": A.st.get("sub_pos", {}), "sub_xs": A.st.get("sub_x", {}), "video_ok": ext in (".mp4", ".m4v", ".webm", ".mov"),
             "score": p.get("score"), "reason": p.get("reason", ""),
             "vod_at": p.get("vod_at")}
 
@@ -454,7 +501,7 @@ def _preview_work(d):
             res = rv.make_preview(p["file"], d["fmt"], d.get("rects") or [], d.get("cap") or False, d.get("sub_y"),
                                   t, png, A.cfg, style=d.get("style"), font=d.get("font") or None,
                                   content=d.get("content"), sub_anim=d.get("anim"), zoom=d.get("zoom", True),
-                                  sub_look=d.get("look"))
+                                  sub_look=d.get("look"), sub_x=d.get("sub_x"))
             if not res or not Path(res["png"]).exists():
                 err = "пример не получился: перемотай клип на другой момент и нажми «Обновить пример»"
         except ValueError as e:
@@ -497,7 +544,7 @@ def preview_video_req(d):
                 res = rv.make_preview(p["file"], d["fmt"], d.get("rects") or [], d.get("cap") or False, d.get("sub_y"),
                                       t, out, A.cfg, style=d.get("style"), font=d.get("font") or None,
                                       content=d.get("content"), video=min(8.0, max(1.0, dur - t)),
-                                      sub_anim=d.get("anim"), zoom=d.get("zoom", True), sub_look=d.get("look"))
+                                      sub_anim=d.get("anim"), zoom=d.get("zoom", True), sub_look=d.get("look"), sub_x=d.get("sub_x"))
                 if not res or not Path(res.get("video", "")).exists():
                     err = "пример в движении не собрался: попробуй с другого места клипа"
             except Exception as e:
@@ -520,7 +567,7 @@ def montage_req(d):
     info = m.probe(p["file"])
     streamer = (d.get("streamer") or "").strip().lower()
     job = {"clip": p, "fmt_key": d["fmt"], "rects": d.get("rects") or [], "streamer": streamer,
-           "title": d.get("title") or "", "captions": d.get("cap") or False, "sub_y": d.get("sub_y"),
+           "title": d.get("title") or "", "captions": d.get("cap") or False, "sub_y": d.get("sub_y"), "sub_x": d.get("sub_x"),
            "style": d.get("style") or "classic", "font": d.get("font") or None,
            "banner": d.get("banner") if d.get("banner") in m.banner_list(A.cfg) else None,
            "content": d.get("content"), "sub_anim": d.get("anim"), "zoom": d.get("zoom", True),
@@ -636,7 +683,7 @@ def blog_req(d):
         return {"music": blogger.music_list(), "sounds": blogger.sound_list(), "saved": saved, "hook_font": hf[0],
                 "corsiva": hf[0].lower().startswith("monotype"), "sub_font": blogger.sub_font(download=False)[0],
                 "hook_fonts": blogger.user_hook_fonts(), "font_pool": blogger.font_pool(),
-                "mstyles": blogger.mstyles_public(), "owner": blogger.OWNER,
+                "mstyles": blogger.mstyles_public(), "owner": blogger.OWNER, "mass": mass_murchik(),
                 "setup": {"name": report.user().get("name", ""),       # первый запуск: имя и свой ключ Claude
                           "key": m.KEY_FILE.exists() and len(m.KEY_FILE.read_text(encoding="utf-8-sig").strip()) > 20}
                 if mass_murchik() else None}
@@ -1100,7 +1147,11 @@ def reaction_req(d):
     if d.get("act") == "pick":
         return {"files": ask_files("video")}
     if d.get("act") == "init":                   # настройки, выбранные в прошлый раз в этом профиле
-        return {"saved": A.cfg.get("reaction_opts") or dict(RX_DEFAULT), "queue": _rxq()}
+        q = _rxq()
+        if any(x.get("done") for x in q):         # нарезанные раньше (старая версия их оставляла) — убираем
+            q = [x for x in q if not x.get("done")]
+            (BASE / "reaction_queue.json").write_text(json.dumps(q, ensure_ascii=False, indent=1), encoding="utf-8")
+        return {"saved": A.cfg.get("reaction_opts") or dict(RX_DEFAULT), "queue": q}
     if d.get("act") == "q_crop":                 # подрезка камеры: масштаб и сдвиг
         q = _rxq()
         c = d.get("crop") or {}
@@ -1210,14 +1261,14 @@ def reaction_req(d):
             say(f"видео {k} из {len(cams)}: {_nm(vid)} + камера {Path(cam).name}")
             try:
                 crop = crops[k - 1] if k - 1 < len(crops) else None
-                made += len(reaction.run(cam, vid, n, dict(opts, cam_crop=crop), A.cfg,
-                                         say=lambda t, k=k: say(f"видео {k} из {len(cams)} · {t}", _rx_pct(k, len(cams), t)),
-                                         should_stop=lambda: VOD["stop"]))
-                q = _rxq()                       # отмечаем в очереди: это видео нарезано
-                for x in q:
-                    if x["src"] == vid:
-                        x["done"] = True
-                (BASE / "reaction_queue.json").write_text(json.dumps(q, ensure_ascii=False, indent=1), encoding="utf-8")
+                got = reaction.run(cam, vid, n, dict(opts, cam_crop=crop), A.cfg,
+                                   say=lambda t, k=k: say(f"видео {k} из {len(cams)} · {t}", _rx_pct(k, len(cams), t)),
+                                   should_stop=lambda: VOD["stop"])
+                made += len(got)
+                if got:                          # нарезано: видео уходит из очереди, ролики — в готовых
+                    q = [x for x in _rxq() if x["src"] != vid]
+                    (BASE / "reaction_queue.json").write_text(json.dumps(q, ensure_ascii=False, indent=1), encoding="utf-8")
+                    A.emit("rxq", n=len(q))
             except reaction.Stop as e:
                 err = str(e)
                 say(f"видео {k}: {e}")
@@ -1309,6 +1360,53 @@ def skip_req(d):
         rv.save_state(A.st)
     A.refresh()
     return {"ok": True}
+
+
+WAVES = {}
+
+
+def clip_wave_req(d):
+    """Громкость клипа для полосы плеера на главном экране (как в редакторе): видно крики и тишину."""
+    try:
+        p = A.item(d["id"])
+    except Exception:
+        return {"wave": []}
+    key = (p["file"], Path(p["file"]).stat().st_mtime if Path(p["file"]).exists() else 0)
+    if key not in WAVES:
+        try:
+            WAVES[key] = ed_wave(p["file"])
+        except Exception:
+            WAVES[key] = []
+        if len(WAVES) > 60:
+            WAVES.pop(next(iter(WAVES)))
+    return {"wave": WAVES[key]}
+
+
+def unskip_req(d):
+    """Вернуть пропущенный клип в очередь (кнопка «Вернуть» сразу после «Пропустить»)."""
+    cid = str(d.get("id") or "")
+    with A.lock:
+        was = A.st["clips"].pop(cid, None)
+        rv.save_state(A.st)
+    A.refresh()
+    return {"ok": was is not None}
+
+
+def add_paths_req(d):
+    """Видео, перетащенные мышкой на главный экран (уже сохранены в uploads): в очередь как свои файлы."""
+    n = 0
+    for f in d.get("paths") or []:
+        try:
+            pth = Path(f).resolve()
+            pth.relative_to(UPLOADS.resolve())
+        except Exception:
+            continue
+        if pth.exists():
+            rv.add_own(A.st, str(pth))
+            n += 1
+    if n:
+        A.refresh()
+    return {"added": n}
 
 
 def find_clips():
@@ -1582,7 +1680,12 @@ def streamers(d):
         lst.remove(d["login"])
         rv.save_streamers(lst)
         msg = f"{d['login']} убран из пула"
-    return {"list": lst, "msg": msg}
+    model = chance_model()                       # сколько роликов стримера прошли порог выплаты
+    stats = {}
+    if model:
+        for k, (n, g) in ((model.get("by") or {}).get("streamer") or {}).items():
+            stats[k] = [n, g]
+    return {"list": lst, "msg": msg, "stats": stats, "base": round(model["base"], 3) if model else None}
 
 
 # ключи
@@ -1770,6 +1873,11 @@ def hq_base():
     """Адрес сервера HQ из ссылки виджета (/widget в боте HQ): http://хост:порт и ключ. Хранится только на этом ПК."""
     import accounts
     link = str(accounts.load_settings().get("hq_link") or "")
+    if not link and BASE != CODE:                # профиль без своей ссылки: сервер тот же, что у главной программы
+        try:
+            link = str(json.loads((CODE / "analytics" / "settings.json").read_text(encoding="utf-8")).get("hq_link") or "")
+        except Exception:
+            link = ""
     mt = re.match(r"(https?://[^/?#\s]+)[^?#\s]*\?(?:.*&)?k=([\w\-]+)", link.strip())
     return (mt.group(1), mt.group(2)) if mt else (None, None)
 
@@ -1810,6 +1918,41 @@ def hq_views(fresh=True):
     except Exception:
         return {"offline": err or "ещё нет цифр с сервера", "offers": {}, "accounts": {}, "rows": [], "videos": [],
                 "topics": {}}
+
+
+def my_accounts():
+    """Аккаунты TikTok этого профиля (вкладка «Офферы и аккаунты»). None — ещё не выбраны: показываем все."""
+    import accounts
+    v = accounts.load_settings().get("my_accounts")
+    return [str(a).lower() for a in v] if isinstance(v, list) else None
+
+
+def other_accounts():
+    """Аккаунты, которые взяли другие профили: {аккаунт: имя профиля}."""
+    out = {}
+    for key, d in profile_dirs():
+        if Path(d).resolve() == BASE.resolve():
+            continue
+        try:
+            v = json.loads((Path(d) / "analytics" / "settings.json").read_text(encoding="utf-8")).get("my_accounts")
+        except Exception:
+            continue
+        for a in v or []:
+            out.setdefault(str(a).lower(), profile_label(key, Path(d)))
+    return out
+
+
+def for_profile(srv):
+    """Цифры сервера только по аккаунтам этого профиля (офферы остаются все)."""
+    mine = my_accounts()
+    if mine is None or not isinstance(srv, dict):
+        return srv
+    keep = set(mine)
+    out = dict(srv)
+    out["accounts"] = {a: x for a, x in (srv.get("accounts") or {}).items() if a.lower() in keep}
+    out["rows"] = [r for r in srv.get("rows") or [] if str(r.get("acc", "")).lower() in keep]
+    out["videos"] = [v for v in srv.get("videos") or [] if str(v.get("acc", "")).lower() in keep]
+    return out
 
 
 def today_board(srv):
@@ -1867,7 +2010,7 @@ def run_analysis(say, deep=False, ai=True, handles=None, goal=100000):
     """Разбор. Подключён сервер — цифры с него (браузер не открывается). Нет сервера — старый сбор с этого ПК."""
     import accounts
     if hq_base()[0]:
-        srv = hq_views(fresh=True)
+        srv = for_profile(hq_views(fresh=True))
         if srv.get("offline") and not srv.get("videos"):
             raise accounts.Stop(f"сервер не отвечает: {srv['offline']}")
         return accounts.analyze_server(srv, A.cfg, say, deep=deep, ai=ai)
@@ -1883,8 +2026,10 @@ def tt_req(d):
         return {"error": "Для анализа аккаунтов нужен файл accounts.py: поставь обновление программы."}
     act = d.get("act")
     if act == "views":                           # офферы, аккаунты, деньги и доска «Сегодня»
-        srv = hq_views(fresh=bool(d.get("fresh", True)))
-        return {"srv": srv, "board": today_board(srv), "linked": bool(hq_base()[0])}
+        full = hq_views(fresh=bool(d.get("fresh", True)))
+        srv = for_profile(full)
+        return {"srv": srv, "board": today_board(srv), "linked": bool(hq_base()[0]), "all_accounts": full.get("accounts") or {},
+                "mine": my_accounts(), "others": other_accounts(), "profile": profile_label(my_key(), BASE) if BASE != CODE else "СНГ"}
     if act == "hq_link":                         # ссылка из /widget бота HQ: проверяем и запоминаем на этом ПК
         s = accounts.load_settings()
         old = s.get("hq_link")
@@ -1904,7 +2049,13 @@ def tt_req(d):
             return {"error": str(e)}
         if r.get("error"):
             return r
-        return {"ok": True, "srv": hq_views()}
+        if isinstance(d.get("mine"), list):      # какие аккаунты относятся к этому профилю — хранится в профиле
+            st_ = accounts.load_settings()
+            st_["my_accounts"] = sorted({str(a).lower() for a in d["mine"] if a})
+            accounts.save_settings(st_)
+            CH["mt"] = None                      # шанс клипов пересчитать по новым аккаунтам
+        full = hq_views()
+        return {"ok": True, "srv": for_profile(full), "all_accounts": full.get("accounts") or {}, "mine": my_accounts()}
     if act == "views_run":                       # собрать просмотры на сервере сейчас
         try:
             r = hq_call("/api/tt/run", {})
@@ -2029,6 +2180,18 @@ def leaders_req(d):
 MEDIA = {}                                       # номер → файл, который окно может проиграть
 
 
+def play_out(d):
+    """Ссылка на готовый ролик, чтобы посмотреть его прямо в окне (только из папки clips этого профиля)."""
+    try:
+        p = Path(d.get("path") or "").resolve()
+        p.relative_to((BASE / "clips").resolve())
+    except Exception:
+        return {"error": "этот файл не из папки готовых роликов"}
+    if not p.exists():
+        return {"error": "ролик уже удалён очисткой"}
+    return {"url": media_url(p)}
+
+
 def media_url(path):
     mid = secrets.token_hex(6)
     MEDIA[mid] = str(path)
@@ -2036,6 +2199,37 @@ def media_url(path):
         for k in list(MEDIA)[:100]:
             MEDIA.pop(k, None)
     return f"/media?id={mid}&k={TOKEN}"
+
+
+def ed_wave(src):
+    """Громкость исходника по 0.1 с (0..1) для таймлайна редактора: видно крики и тишину."""
+    import numpy as np
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(src), "-vn", "-ac", "1", "-ar", "8000", "-f", "f32le", "-"],
+                         capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+    a = np.frombuffer(raw, dtype=np.float32)
+    n = a.size // 800
+    if n < 2:
+        return []
+    db = 20 * np.log10(np.sqrt((a[:n * 800].reshape(n, 800) ** 2).mean(axis=1)) + 1e-6)
+    lo, hi = float(np.percentile(db, 5)), float(db.max())
+    return [round(max(0.0, min(1.0, (x - lo) / max(1.0, hi - lo))), 2) for x in db.tolist()]
+
+
+def ed_strip(src, dur):
+    """Полоса из 16 кадров исходника для таймлайна (одна картинка). Путь к jpg или None."""
+    import hashlib
+    src = Path(src)
+    out = m.CACHE / ("edstrip_" + hashlib.md5(f"{src}|{src.stat().st_mtime}".encode()).hexdigest()[:12] + ".jpg")
+    if not out.exists():
+        m.CACHE.mkdir(exist_ok=True)
+        fps = 16 / max(1.0, float(dur))
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-vf", f"fps={fps:.5f},scale=-2:72,tile=16x1",
+                        "-frames:v", "1", "-q:v", "5", str(out)], capture_output=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    return out if out.exists() else None
+
+
+ED_STRIP = {"png": None}
 
 
 def editor_req(d):
@@ -2075,9 +2269,19 @@ def editor_req(d):
             words = m.ai_fix_words(m.merge_hyphens(m.transcribe(src, A.cfg)), src, A.cfg)
         info = m.probe(src)
         play = safe_copy("ed_" + src.stem, str(src)) if d.get("safe") else src   # на компьютерах, где видео чёрное
+        try:
+            wave = ed_wave(src)
+        except Exception:
+            wave = []
+        try:
+            strip = ed_strip(src, info["dur"])
+            ED_STRIP["png"] = str(strip) if strip else None
+        except Exception:
+            strip = None
         return {"out": str(out), "src": media_url(play), "ready": media_url(out), "dur": info["dur"],
                 "w": info["w"], "h": info["h"], "words": words, "edit": ed, "title": p.get("final_title", ""),
-                "streamer": p.get("streamer", ""), "banner_at_out": p.get("banner_at"), "score": (p.get("agents") or {}).get("score")}
+                "streamer": p.get("streamer", ""), "banner_at_out": p.get("banner_at"), "score": (p.get("agents") or {}).get("score"),
+                "wave": wave, "strip": bool(strip)}
     if act == "save":
         out = Path(d.get("out") or "")
         p = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
@@ -2094,7 +2298,9 @@ def editor_req(d):
                 "cuts": [[float(a), float(b)] for a, b in (e.get("cuts") or []) if float(b) - float(a) > 0.1],
                 "banner_at": float(e["banner_at"]) if e.get("banner_at") is not None else None,
                 "teaser": bool(e.get("teaser", True)),
-                "words": [{"s": float(w["s"]), "e": float(w["e"]), "t": str(w["t"])} for w in (e.get("words") or [])]
+                "teaser_at": float(e["teaser_at"]) if e.get("teaser_at") is not None else None,
+                "words": [dict({"s": float(w["s"]), "e": float(w["e"]), "t": str(w["t"])}, **({"mark": True} if w.get("mark") else {}))
+                          for w in (e.get("words") or [])]
                 if e.get("words") is not None else None}
         job["edit"] = edit
         jid = secrets.token_hex(4)
@@ -2123,12 +2329,12 @@ def daily_report(weekly=False, fetch=True):
     if not fetch and not linked:
         rep = accounts.last_report()
         if not rep:
-            m.tg_message("📊 Отчёт: свежих цифр нет. Открой «Аналитика TikTok» и нажми «Собрать анализ», "
+            m.tg_message("📊 Отчёт: свежих цифр нет. Открой «Аналитика TikTok» и нажми «Обновить разбор», "
                          "тогда отчёты будут с цифрами.", "report")
             return {"error": "нет данных аналитики"}
         text = (accounts.weekly_text(rep) if weekly else accounts.report_text(rep)) + \
             f"\n\n(цифры TikTok из аналитики от {time.strftime('%d.%m %H:%M', time.localtime(rep.get('time', 0)))}; " \
-            "свежие — кнопка «Собрать анализ»)"
+            "свежие — кнопка «Обновить разбор»)"
         ok = m.tg_message(text, "report")
         A.log(("разбор недели " if weekly else "отчёт за день ") + ("отправлен в Telegram" if ok else "не ушёл в Telegram"))
         return {"ok": True, "sent": ok}
@@ -2438,6 +2644,11 @@ def look(d):
                 A.st.setdefault("sub_pos", {}).pop(d["fmt"], None)
             else:
                 A.st.setdefault("sub_pos", {})[d["fmt"]] = int(d["sub"])
+        if "sub_x" in d:                         # место субтитров по ширине (доля кадра), как в «Реакциях»
+            if d["sub_x"] is None:
+                A.st.setdefault("sub_x", {}).pop(d["fmt"], None)
+            else:
+                A.st.setdefault("sub_x", {})[d["fmt"]] = float(d["sub_x"])
         rv.save_state(A.st)
     return {"ok": True}
 
@@ -2455,9 +2666,13 @@ ACTIONS = {
     "find": lambda d: find_clips(),
     "qtools": queue_req,
     "add_files": lambda d: add_files(),
+    "unskip": unskip_req,
+    "clip_wave": clip_wave_req,
+    "add_paths": add_paths_req,
     "clear_caps": clear_caps,
     "open_player": lambda d: (open_path(A.item(d["id"])["file"]), {"ok": True})[1],
     "open_out": lambda d: (open_path(Path(d["path"]).parent), {"ok": True})[1],
+    "play_out": lambda d: play_out(d),
     "quit": quit_req,
     "prefetch": lambda d: (threading.Thread(target=lambda: [safe_copy(i, A.item(i)["file"]) for i in d.get("ids", [])
                                                          if _has(i)], daemon=True).start(), {"ok": True})[1],
@@ -2547,6 +2762,42 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/preview.png":
                 f = A.pv["png"]
                 return self._send(200, Path(f).read_bytes(), "image/png") if f and Path(f).exists() else self._send(404)
+            if path == "/edstrip.jpg":               # полоса кадров для таймлайна редактора
+                f = ED_STRIP["png"]
+                return self._send(200, Path(f).read_bytes(), "image/jpeg") if f and Path(f).exists() else self._send(404)
+            if path == "/ex.jpg":                    # готовые картинки-примеры стилей и форматов (ex_*.jpg)
+                n = q.get("n", "")
+                f = Path(__file__).resolve().parent / f"ex_{n}.jpg"
+                if not re.fullmatch(r"(dota_)?(style|fmt)_[a-z_]+", n) or not f.exists():
+                    return self._send(404)
+                return self._send(200, f.read_bytes(), "image/jpeg", {"Cache-Control": "max-age=86400"})
+            if path == "/bthumb.jpg":                # картинка баннера для меню: кадр из середины, зелёный фон вырезан
+                b = m.banner_list(A.cfg).get(q.get("n", ""))
+                try:
+                    src = m.find_banner(b["file"]) if b else None
+                except Exception:
+                    src = None
+                if not src:
+                    return self._send(404)
+                import hashlib
+                key = json.dumps([str(src), src.stat().st_mtime, b], sort_keys=True, default=str)
+                out = m.CACHE / ("bthumb2_" + hashlib.md5(key.encode()).hexdigest()[:12] + ".jpg")
+                if not out.exists():
+                    m.CACHE.mkdir(exist_ok=True)
+                    try:
+                        bb = m.banner_for({"banners": {"x": b}}, "cs", "x")
+                        banner, (ow, oh), chain = m.banner_filter(bb, A.cfg, quiet=True)
+                        t = min(1.5, m.probe(banner)["dur"] * 0.5)
+                        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=0x14161d:s={ow + 40}x{oh + 40}",
+                                        "-ss", f"{t:.2f}", "-i", str(banner), "-filter_complex",
+                                        f"[1:v]{chain}[b];[0:v][b]overlay=20:20:shortest=1,scale=320:-2", "-frames:v", "1",
+                                        "-q:v", "4", str(out)], capture_output=True,
+                                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    except Exception:
+                        pass
+                if not out.exists():
+                    return self._send(404)
+                return self._send(200, out.read_bytes(), "image/jpeg", {"Cache-Control": "max-age=600"})
             if path == "/banner.png":
                 f = A.bpv["png"]
                 return self._send(200, Path(f).read_bytes(), "image/png") if f and Path(f).exists() else self._send(404)

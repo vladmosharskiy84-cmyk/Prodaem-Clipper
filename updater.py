@@ -21,6 +21,12 @@ BASE = Path(__file__).resolve().parent
 URL_FILE = BASE / "update_url.txt"
 STATE_FILE = BASE / "update_state.json"
 FILES = ["montage.py", "review.py", "top5.py", "fixcam.py", "clipfinder.py", "updater.py", "webapp.py", "ui.html", "logo_src.png", "highlights.py", "accounts.py", "agents.py", "leaders.py", "tgbot.py", "blogger.py", "reaction.py", "ms_frame.jpg", "report.py"]
+# картинки-примеры в меню «Стиль монтажа» и «Формат» (рисует make_examples.py)
+FILES += [f"ex_style_{k}.jpg" for k in ("classic", "neon", "gradient", "efir", "glass", "split", "sticker", "full", "cards")]
+FILES += [f"ex_fmt_{k}.jpg" for k in ("talk", "talk_satis", "react", "cs", "cs_nocam", "multi")]
+# свои картинки для профиля DOTA (кадр из Доты); формата «несколько стримеров» нет — берётся общий
+FILES += [f"ex_dota_style_{k}.jpg" for k in ("classic", "neon", "gradient", "efir", "glass", "split", "sticker", "full", "cards")]
+FILES += [f"ex_dota_fmt_{k}.jpg" for k in ("talk", "talk_satis", "react", "cs", "cs_nocam")]
 
 
 def base_url():
