@@ -828,6 +828,8 @@ tr.acnew{animation:e2pop .4s var(--ease) both}tr.acnew td{background:color-mix(i
 .pvsub2.auto{opacity:.85}
 .phone.outplay .pvsub2,.rxmode .pvsub2,.blogmode .pvsub2{display:none}
 img,video{-webkit-user-drag:none;user-drag:none}
+.brule{margin:6px 0 4px;padding:12px 12px 4px;border-radius:12px;border:1px dashed color-mix(in srgb,var(--a2) 35%,var(--line));background:color-mix(in srgb,var(--a2) 5%,transparent)}
+.brnote{text-align:left;margin:0 0 8px;color:var(--a2)}
 </style>
 </head>
 <body>
@@ -1876,8 +1878,8 @@ async function blogMode(){document.documentElement.dataset.theme="redblack";
   $(".qbtns").innerHTML=`<div class="drop sm" id="bl_drop"><b>Перетащи видео сюда</b><span>или нажми, чтобы выбрать. Длинное (больше 3 минут) — найду лучшие моменты, короткое встанет в очередь целиком</span><em id="bl_up"></em></div>
     <button class="btn" id="bl_yt" style="--k:#e8321f">Целое видео с YouTube…</button>
     <button class="btn" id="bl_ready">📁 Готовые ролики</button>${r0.mass?"":`
-    <button class="btn" id="bl_tt" style="--k:var(--ok)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18M6 16v-5M11 16V7M16 16v-8M21 16V4"/></svg>Аналитика TikTok</button>`}`;
-  if($("#bl_tt")&&ttOpen)$("#bl_tt").onclick=ttOpen;
+    <button class="btn" id="bl_ttan" style="--k:var(--ok)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18M6 16v-5M11 16V7M16 16v-8M21 16V4"/></svg>Аналитика TikTok</button>`}`;
+  if($("#bl_ttan")&&ttOpen)$("#bl_ttan").onclick=ttOpen;   /* не bl_tt: так зовётся поле заголовка */
   $("#list").innerHTML='<div class="empty">Очередь пуста.<br>Кинь видео или ссылку с YouTube — здесь появятся лучшие моменты.</div>';
   /* в центре: плеер + настройки Мурчика вместо рамок и форматов */
   const sec=document.createElement("div");sec.className="blogset";
@@ -2002,7 +2004,7 @@ async function blogMode(){document.documentElement.dataset.theme="redblack";
   addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("on");});addEventListener("dragleave",e=>{if(!e.relatedTarget)dz.classList.remove("on");});
   addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("on");if(e.dataTransfer.files.length)upload(e.dataTransfer.files);});
   q("#bl_yt").onclick=()=>{const w=modal(`<h3>Целое видео с YouTube</h3><p class="sub">Программа скачает видео, распознает речь, и Claude найдёт законченные моменты:
-      треш-истории (гопнули, ударили, запаковали), про бабки и мотивацию для пацанов. Они встанут в очередь слева — смотришь, вписываешь главные слова и монтируешь нужные.</p>
+      истории из жизни с поворотом, про деньги и мотивацию для пацанов. Они встанут в очередь слева — смотришь, вписываешь главные слова и монтируешь нужные.</p>
       <input class="inp" id="y_url" placeholder="https://youtube.com/watch?v=…" autocomplete="off" style="margin-bottom:10px">
       <div class="ychoose"><div><span class="label">Сколько моментов</span><div class="seg" id="y_nseg">${[5,10,15,20].map(n=>`<button type="button" data-v="${n}">${n}</button>`).join("")}</div></div><div><span class="label">Длина момента</span><div class="seg" id="y_lseg"><button type="button" data-v="short">20–40 с · лучше всего</button><button type="button" data-v="mid">30–60 с</button><button type="button" data-v="long">45–90 с</button></div></div></div>
       <div class="flex" style="display:none"><select class="inp" id="y_n" style="height:42px;width:auto"><option value="5">5 моментов</option><option value="10">10 моментов</option><option value="15">15 моментов</option><option value="20">20 моментов</option></select>
@@ -2508,13 +2510,28 @@ async function openBanners(){const r=await api("banners",{act:"get"});const B=JS
       <div class="kv" id="b_simrow"><span class="label" style="margin:0">Сила</span><input type="range" id="b_sim" min="0.04" max="0.35" step="0.01" value="${b.chroma_sim||0.12}"><b id="b_simv"></b></div>
       <div class="kv"><span class="label" style="margin:0">Размер</span><div class="seg" id="b_sz"><button data-s="full">Как в файле</button><button data-s="band">Полоса на всю ширину</button></div><span></span></div>
       <div class="kv"><span class="label" style="margin:0">Края</span><div class="flex" style="gap:8px"><button class="btn sm" id="b_crop">Убрать лишние края</button><button class="btn sm" id="b_uncrop">Как в файле</button></div><span></span></div>
+      <div class="brule"><div class="kv"><span class="label" style="margin:0">Где в ролике</span><div class="seg" id="b_pl"><button data-p="mid">По центру</button><button data-p="early">В начале</button></div><span></span></div>
+      <div class="kv" id="b_earow"><span class="label" style="margin:0">Секунда</span><input type="range" id="b_ea" min="10" max="15" step="1"><b id="b_eav"></b></div>
+      <div class="kv"><span class="label" style="margin:0">Длиннее минуты</span><div class="seg" id="b_ev"><button data-e="no">Один баннер</button><button data-e="legacy">Как раньше</button><button data-e="yes">На каждой минуте</button></div><span></span></div>
+      <p class="note brnote" id="b_rnote"></p></div>
       <div class="flex" style="margin-top:8px"><button class="btn sm" id="b_main">★ Сделать основным</button></div>`;
     E.insertAdjacentHTML("afterbegin",'<div class="bprev" id="b_pv"><span class="spin"></span></div><p class="note" id="b_note" style="text-align:left;margin:6px 0 14px"></p>');
     const lab=()=>{E.querySelector("#b_spv").textContent=(+b.speed||1).toFixed(2)+"x";E.querySelector("#b_blv").textContent=b.fade?b.fade+"%":"нет";
       const ck=b.chroma===null||b.chroma===""||b.chroma===false?"off":(b.chroma||"auto");
       E.querySelectorAll("#b_ck button").forEach(x=>x.classList.toggle("on",x.dataset.c===ck));
       E.querySelector("#b_simrow").style.display=ck==="off"?"none":"";E.querySelector("#b_simv").textContent=Math.round((+b.chroma_sim||0.12)*100);
-      E.querySelectorAll("#b_sz button").forEach(x=>x.classList.toggle("on",x.dataset.s===(b.size||"full")));};lab();
+      E.querySelectorAll("#b_sz button").forEach(x=>x.classList.toggle("on",x.dataset.s===(b.size||"full")));
+      const pl=b.place||"mid",ev=b.every_min===true?"yes":b.every_min===false?"no":"legacy",ea=Math.round(+b.early_at||12);
+      E.querySelectorAll("#b_pl button").forEach(x=>x.classList.toggle("on",x.dataset.p===pl));
+      E.querySelectorAll("#b_ev button").forEach(x=>x.classList.toggle("on",x.dataset.e===ev));
+      E.querySelector("#b_earow").style.display=pl==="early"?"":"none";E.querySelector("#b_ea").value=ea;E.querySelector("#b_eav").textContent=ea+" с";
+      const one=pl==="early"?`на ${ea}-й секунде`:"по центру ролика",m=ev==="yes"?(pl==="early"?`${ea} с, 1:${String(ea).padStart(2,"0")}, 2:${String(ea).padStart(2,"0")}…`:"0:30, 1:30, 2:30…"):"";
+      E.querySelector("#b_rnote").textContent=ev==="yes"?`Ролик до минуты — баннер ${one}. Длиннее — в каждой минуте: ${m}`
+        :ev==="no"?`Всегда один баннер ${one}, какой бы длины ни был ролик`
+        :`Баннер ${one}. Если ролик от 1:30 — два баннера: на 0:30 и 1:00 (старое правило)`;};lab();
+    E.querySelectorAll("#b_pl button").forEach(x=>x.onclick=()=>{b.place=x.dataset.p;lab();});
+    E.querySelectorAll("#b_ev button").forEach(x=>x.onclick=()=>{b.every_min=x.dataset.e==="yes"?true:x.dataset.e==="no"?false:null;lab();});
+    E.querySelector("#b_ea").oninput=e=>{b.early_at=+e.target.value;lab();};
     E.querySelector("#b_sp").oninput=e=>{b.speed=+e.target.value;lab();prev(400);};E.querySelector("#b_bl").oninput=e=>{b.fade=+e.target.value;lab();prev(400);};
     E.querySelectorAll("#b_ck button").forEach(x=>x.onclick=()=>{b.chroma=x.dataset.c;lab();prev(0);});
     E.querySelector("#b_sim").oninput=e=>{b.chroma_sim=+e.target.value;lab();prev(400);};

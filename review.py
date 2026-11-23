@@ -728,7 +728,7 @@ def run_job(job, cfg, enc, log=print):
     name = (streamer or "video") + "_" + "".join(ch for ch in p["clip_id"][:16] if ch.isalnum() or ch in "_-")
     out = BASE / "clips" / "ready" / folder / f"{name}.mp4"
     title = (job.get("title") or "").strip()
-    show_title = bool(title) if own else bool(cfg.get("clip_titles", False))
+    show_title = bool(title) or (not own and bool(cfg.get("clip_titles", False)))   # вписал заголовок — он в ролике у любого клипа
     log(f"{streamer or clip.name}: монтаж ({dict((k, v) for k, v, _ in FORMATS)[job['fmt_key']]})")
 
     def make(extra):

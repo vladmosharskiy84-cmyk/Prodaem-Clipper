@@ -286,6 +286,31 @@ def pause_point(words, dur):
     return min(gaps, key=lambda g: abs(g - mid)) if gaps else max(2.0, min(mid, dur - 2.0))
 
 
+def banner_points(words, dur, bdur, rule):
+    """Где в части ставить баннеры по правилу оффера (окно «Баннеры офферов»): по центру (как раньше),
+    в начале (10–15-я секунда) или в каждой минуте, если часть с баннерами длиннее минуты. Секунды — по исходной части."""
+    rule = rule or {}
+    place, every = rule.get("place"), rule.get("every_min")
+    first = min(15.0, max(10.0, float(rule.get("early_at") or 12))) if place == "early" else None
+    gaps = [w["e"] + min(0.1, (n["s"] - w["e"]) / 2) for w, n in zip(words, words[1:]) if n["s"] - w["e"] >= 0.15]
+    snap = lambda t: min([g for g in gaps if abs(g - t) <= 1.5] or [t], key=lambda g: abs(g - t))
+    if every is True and dur + bdur > 60:
+        start, pts, k = (first if first is not None else 30.0), [], 0
+        while True:
+            t = start + 60.0 * k - k * bdur       # секунда части: уже показанные баннеры сдвигают шкалу
+            if t > dur - 6:
+                break
+            t = snap(t)
+            if not pts or t > pts[-1] + 5:
+                pts.append(t)
+            k += 1
+        if pts:
+            return pts
+    if first is not None:
+        return [max(2.0, min(snap(first), dur - 2.0))]
+    return [pause_point(words, dur)]
+
+
 def render(cam, video, a, b, offset, out, label, words, opts, cfg):
     """Одна часть: видео с секунды a, камера с секунды a + offset; звук — только видео (и баннера)."""
     dur = b - a
@@ -326,22 +351,35 @@ def render(cam, video, a, b, offset, out, label, words, opts, cfg):
         bfile, (bw, bh), chain = m.banner_filter(b_, cfg, quiet=True)
         sp = float(b_.get("speed") or 1)
         bdur = min(12.0, m.probe(bfile)["dur"] / sp)
-        t0 = pause_point(words, dur)
+        ts = banner_points(words, dur, bdur, {k: b_.get(k) for k in ("place", "early_at", "every_min")})
+        n_, cuts = len(ts), [0.0] + ts + [dur]
+        outs = [t + k * bdur for k, t in enumerate(ts)]          # когда каждый баннер идёт в готовом ролике
         inputs += ["-i", str(bfile)]
-        fc += (f";[sa]split[s1][s2];"
-               f"[s1]trim=0:{t0:.3f},setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={bdur:.3f}[pa];"
-               f"[s2]trim={t0:.3f},setpts=PTS-STARTPTS[pb];[pa][pb]concat=n=2:v=1:a=0[sp];"
-               f"[5:v]{chain},setpts=(PTS-STARTPTS)/{sp:.3f}+{t0:.3f}/TB[ban];"
-               f"[sp][ban]overlay=(W-w)/2:(H-h)/2:enable='between(t,{t0:.3f},{t0 + bdur:.3f})':eof_action=pass[sb]")
-        last, total = "sb", dur + bdur
+        fc += f";[sa]split={n_ + 1}" + "".join(f"[s{i}]" for i in range(n_ + 1))
+        for i in range(n_ + 1):
+            fc += (f";[s{i}]trim={cuts[i]:.3f}:{cuts[i + 1]:.3f},setpts=PTS-STARTPTS"
+                   + (f",tpad=stop_mode=clone:stop_duration={bdur:.3f}" if i < n_ else "") + f"[p{i}]")
+        fc += ";" + "".join(f"[p{i}]" for i in range(n_ + 1)) + f"concat=n={n_ + 1}:v=1:a=0[sp]"
+        fc += f";[5:v]{chain}" + (f",split={n_}" + "".join(f"[bn{k}]" for k in range(n_)) if n_ > 1 else "[bn0]")
+        cur = "sp"
+        for k, t_out in enumerate(outs):
+            fc += (f";[bn{k}]setpts=(PTS-STARTPTS)/{sp:.3f}+{t_out:.3f}/TB[ban{k}]"
+                   f";[{cur}][ban{k}]overlay=(W-w)/2:(H-h)/2:enable='between(t,{t_out:.3f},{t_out + bdur:.3f})':eof_action=pass[ov{k}]")
+            cur = f"ov{k}"
+        last, total = cur, dur + n_ * bdur
         if va:                                   # звук видео тоже на паузе: тишина под баннером, дальше с того же места
-            fc += (f";[0:a]asplit[a1][a2];[a1]atrim=0:{t0:.3f},asetpts=PTS-STARTPTS,apad=pad_dur={bdur:.3f}[aa];"
-                   f"[a2]atrim={t0:.3f},asetpts=PTS-STARTPTS[ab];[aa][ab]concat=n=2:v=0:a=1[am]")
+            fc += f";[0:a]asplit={n_ + 1}" + "".join(f"[a{i}]" for i in range(n_ + 1))
+            for i in range(n_ + 1):
+                fc += (f";[a{i}]atrim={cuts[i]:.3f}:{cuts[i + 1]:.3f},asetpts=PTS-STARTPTS"
+                       + (f",apad=pad_dur={bdur:.3f}" if i < n_ else "") + f"[aa{i}]")
+            fc += ";" + "".join(f"[aa{i}]" for i in range(n_ + 1)) + f"concat=n={n_ + 1}:v=0:a=1[am]"
             amap = "[am]"
             if has_audio(bfile):
-                ms = int(t0 * 1000)
-                fc += (f";[5:a]atempo={sp:.3f},atrim=0:{bdur:.3f},adelay={ms}|{ms}[ba];"
-                       f"[am][ba]amix=inputs=2:normalize=0:duration=first[a]")
+                fc += f";[5:a]atempo={sp:.3f},atrim=0:{bdur:.3f}" + (f",asplit={n_}" + "".join(f"[bs{k}]" for k in range(n_)) if n_ > 1 else "[bs0]")
+                for k, t_out in enumerate(outs):
+                    ms = int(t_out * 1000)
+                    fc += f";[bs{k}]adelay={ms}|{ms}[ba{k}]"
+                fc += ";[am]" + "".join(f"[ba{k}]" for k in range(n_)) + f"amix=inputs={n_ + 1}:normalize=0:duration=first[a]"
                 amap = "[a]"
     fc += f";[{last}]format=yuv420p[v]"
     cmd = ["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", fc, "-map", "[v]"] + \

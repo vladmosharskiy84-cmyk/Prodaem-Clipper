@@ -695,23 +695,37 @@ def tight_segments(words, keep, dur, src, max_gap=0.22):
 
 # ---------- целое видео: найти лучшие истории и смонтировать каждую ----------
 STORY_LEN = {"short": (20, 40), "mid": (30, 60), "long": (45, 90)}
-STORY_PROMPT = """Ниже расшифровка видео блогера с отметками времени [секунды]. Это его истории и мысли.
-Найди {n} лучших отдельных моментов для TikTok/Reels, аудитория — парни. Что брать (в порядке важности):
-1) треш-истории из жизни: кого-то гопнули, избили, ударили, «запаковали» (задержали, приняли), разборки, жёсткие ситуации;
-2) истории и мысли про деньги: как заработал, как потерял, долги, схемы, бабки;
-3) мотивация для пацанов: дисциплина, характер, спорт, не сдаваться, как изменил жизнь — сказано жёстко и по делу.
-Скучные рассуждения, приветствия, рекламу, «подписывайтесь» не бери.
+STORY_PROMPT = """Ниже расшифровка видео блогера с отметками времени [секунды]: он рассказывает истории из своей жизни
+и делится мыслями. Найди {n} лучших отдельных моментов для коротких роликов TikTok/Reels, аудитория — молодые парни.
+Что брать (в порядке важности):
+1) личные истории с поворотом: что с ним случилось, как он выкрутился, чем закончилось, какой урок вынес;
+2) истории и мысли про деньги: как заработал, как потерял, долги, первые деньги, ошибки;
+3) мотивация: дисциплина, характер, спорт, как изменил жизнь — сказано прямо и по делу.
+Скучные рассуждения, приветствия, рекламу, «подписывайтесь» не бери. Мы только выбираем отрезки его рассказа.
 
 Каждый момент — законченный кусок, понятный без остального видео, длиной {a}–{b} секунд: начинается сразу с сути или
-цепляющей фразы (без раскачки), заканчивается развязкой, выводом или жёсткой фразой. Не обрывай мысль посередине,
+цепляющей фразы (без раскачки), заканчивается развязкой, выводом или сильной фразой. Не обрывай мысль посередине,
 не начинай с середины фразы. Моменты не пересекаются. Сначала самые сильные.
 
 Для каждого дай 3 главных слова — ключевые темы, по одному слову, с большой буквы (пример: «Бокс», «Спорт», «Связи»):
 они крупно встанут в начале ролика.
 
 Ответ ТОЛЬКО JSON-список:
-[{{"start": секунда начала, "end": секунда конца, "kind": "треш|деньги|мотивация", "words": ["Слово", "Слово", "Слово"],
+[{{"start": секунда начала, "end": секунда конца, "kind": "история|деньги|мотивация", "words": ["Слово", "Слово", "Слово"],
   "title": "о чём, 3–6 слов", "why": "почему зайдёт, коротко", "score": 1-10}}]
+
+Расшифровка:
+{text}"""
+
+
+# запасной запрос, если на часть видео пришёл отказ или пустой ответ: без тем, просто самые цепляющие куски рассказа
+PLAIN_PROMPT = """Ниже расшифровка видео с отметками времени [секунды]. Выбери {n} самых интересных законченных отрезков
+для коротких роликов, длиной {a}–{b} секунд: каждый понятен без остального видео, начинается с сути, заканчивается
+мыслью или выводом. Отрезки не пересекаются. Для каждого дай 3 ключевых слова с большой буквы.
+
+Ответ ТОЛЬКО JSON-список:
+[{{"start": секунда начала, "end": секунда конца, "kind": "момент", "words": ["Слово", "Слово", "Слово"],
+  "title": "о чём, 3–6 слов", "why": "почему интересно, коротко", "score": 1-10}}]
 
 Расшифровка:
 {text}"""
@@ -826,21 +840,27 @@ def pick_stories(words, n, length, cfg, say=print, vlog=False):
             cur = []
     if cur:
         parts.append("\n".join(cur))
-    for chunk in parts:
+    def ask(prompt, chunk):
         r = requests.post("https://api.anthropic.com/v1/messages",
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
                           json={"model": cfg.get("story_model") or cfg.get("cheap_model", "claude-haiku-5-5"), "max_tokens": 10000,
-                                "messages": [{"role": "user", "content": (VLOG_PROMPT if vlog else STORY_PROMPT).format(
-                                    n=min(24, n * 3), a=a, b=b, text=chunk)}]},
+                                "messages": [{"role": "user", "content": prompt.format(n=min(24, n * 3), a=a, b=b, text=chunk)}]},
                           timeout=240)
         if r.status_code != 200:
             raise Stop(f"Claude ответил {r.status_code}: {r.text[:200]}")
-        out = "".join(x.get("text", "") for x in r.json()["content"] if x.get("type") == "text")
+        return "".join(x.get("text", "") for x in r.json().get("content") or [] if x.get("type") == "text")
+
+    for chunk in parts:
+        out = ask(VLOG_PROMPT if vlog else STORY_PROMPT, chunk)
         got = _json_objects(out)
+        if not got:                                  # отказ или пустой ответ: спрашиваем ещё раз, нейтрально
+            say("Claude не дал моменты на часть видео, спрашиваю по-другому…")
+            out = ask(PLAIN_PROMPT, chunk)
+            got = _json_objects(out)
         if got:
             stories += got
         else:
-            say("Claude ответил не по формату на часть видео, пропускаю её: " + out[:120].replace("\n", " "))
+            say("Claude не дал моменты на часть видео, пропускаю её: " + out[:120].replace("\n", " "))
     # Кандидатов втрое больше, чем нужно. Каждый ПК берёт свою подборку: к оценке добавляется своя «случайность»
     # до 4 баллов, поэтому друзья, режущие одно видео, чаще берут разные истории (самые сильные всё равно в почёте).
     import hashlib
@@ -879,6 +899,31 @@ def pick_stories(words, n, length, cfg, say=print, vlog=False):
     return sorted(ok, key=lambda x: x["start"])
 
 
+def speech_stories(words, n, a, b):
+    """Запасной поиск без Claude: окна нужной длины с самой плотной речью, границы — по целым фразам."""
+    if not words:
+        return []
+    L = (a + b) / 2
+    end_t = words[-1]["e"]
+    cands, t = [], words[0]["s"]
+    while t + a <= end_t:
+        ws = [w for w in words if t <= w["s"] < t + L]
+        if len(ws) >= 8:
+            cands.append((len(ws) / L, t, t + L, ws))
+        t += 5.0
+    ok = []
+    for dens, s0, e0, ws in sorted(cands, key=lambda c: -c[0]):
+        s1, e1 = whole_phrases(words, ws[0]["s"] - 0.25, ws[-1]["e"] + 0.4)
+        if e1 - s1 > b * 1.4 or any(not (e1 <= x["start"] or s1 >= x["end"]) for x in ok):
+            continue
+        first = [re.sub(r"[^\w-]", "", str(w["t"])).capitalize() for w in ws if len(str(w["t"])) > 3][:3]
+        ok.append({"start": s1, "end": e1, "words": first, "title": " ".join(str(w["t"]) for w in ws[:6]),
+                   "why": "плотная речь без пауз", "score": None})
+        if len(ok) >= n:
+            break
+    return sorted(ok, key=lambda x: x["start"])
+
+
 def long_find(src, cfg, opts=None, n=10, say=print, should_stop=None):
     """Целое видео (файл или ссылка YouTube) → n лучших моментов в очередь слева, как «Нарезать стрим» в DOTA.
     Человек сам смотрит каждый, вписывает главные слова (Claude уже предложил свои) и монтирует нужные."""
@@ -900,7 +945,11 @@ def long_find(src, cfg, opts=None, n=10, say=print, should_stop=None):
     say("ищу лучшие моменты…")
     stories = pick_stories(words, int(n), o.get("story_len") or "short", cfg, say, vlog=bool(o.get("vlog")) and OWNER)
     if not stories:
-        raise Stop("Claude не нашёл подходящих моментов, попробуй другую длину")
+        say("Claude не выбрал моменты — нарезаю сам по плотности речи")
+        a_, b_ = STORY_LEN.get(o.get("story_len") or "short", STORY_LEN["short"])
+        stories = speech_stories(words, int(n), a_, b_)
+    if not stories:
+        raise Stop("не получилось найти моменты: в видео мало связной речи")
     raw_dir = BASE / "clips" / "raw" / "murchik"
     now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     made = []

@@ -1091,9 +1091,37 @@ def snap_to_pause(words, segs, target, tol):
     return best if best is not None else target
 
 
-def banner_splits(words, segs, content, ban_dur, cfg):
+def banner_splits(words, segs, content, ban_dur, cfg, rule=None):
     """Где ставить баннер. Обычно один, в середине. Если готовый ролик выходит от полутора минут,
-    по условиям оффера баннеров два: на 30-й секунде и на 60-й."""
+    по условиям оффера баннеров два: на 30-й секунде и на 60-й.
+    rule — правило оффера из окна «Баннеры офферов»: {"place": "mid"|"early", "early_at": 12, "every_min": True}.
+    «В начале» — баннер на 10–15-й секунде; «на каждой минуте» — если ролик длиннее минуты, баннер в каждой минуте."""
+    rule = rule or {}
+    place, every = rule.get("place"), rule.get("every_min")          # every_min: True / False / None (как раньше)
+    first = min(15.0, max(10.0, float(rule.get("early_at") or 12))) if place == "early" else None
+    if every is True and content + ban_dur > 60:
+        # по баннеру в каждой минуте: 0:12, 1:12, 2:12… («в начале») или 0:30, 1:30… («по центру» каждой минуты)
+        start = first if first is not None else 30.0
+        targets, k = [], 0
+        while True:
+            t = start + 60.0 * k
+            if t > content + ban_dur * (k + 1) - 6:       # баннер не ставим в самый конец ролика
+                break
+            targets.append(t)
+            k += 1
+        out, prev = [], -1.0
+        for i, t in enumerate(targets):                   # шкала без баннеров: раньше на длину уже показанных
+            c = snap_to_pause(words, segs, t - i * ban_dur, 1.5)
+            if c > prev + 5 and c < content - 2:
+                out.append(c)
+                prev = c
+        if out:
+            return out
+    two_from = float(cfg.get("two_banners_from", 90))
+    if first is not None and (every is not None or content + ban_dur < two_from):
+        return [min(snap_to_pause(words, segs, first, 1.5), max(0.5, content - 2))]   # «в начале»: 10–15-я секунда
+    if place == "mid" and every is not None:
+        return [content / 2 if not words else pick_split(words, segs, cfg)]           # строго один, по центру
     if content + ban_dur < float(cfg.get("two_banners_from", 90)):
         return [pick_split(words, segs, cfg)]
     # 30-я и 60-я секунды готового ролика; вторая точка на шкале без баннеров раньше на длину первого
@@ -2706,7 +2734,8 @@ def montage(clip, fmt, streamer, title, out, cfg, enc, fixed_title=None, satis=N
         ban_speed = bnr["speed"]                                       # баннер можно ускорить
         print(f"  баннер: {Path(banner).name}, ускорение {ban_speed:g}x" + (f", прозрачность {bnr['fade']:g}%" if bnr.get("fade") else ""))
         ban_dur = probe(banner)["dur"] / ban_speed
-        split_out = banner_splits(words, segs, content, ban_dur, cfg)     # один баннер или два
+        split_out = banner_splits(words, segs, content, ban_dur, cfg,       # один баннер, два или по правилу оффера
+                                  {k: bnr.get(k) for k in ("place", "early_at", "every_min")})
         if (force or {}).get("banner_at") is not None:   # место баннера выбрано в редакторе (секунда исходника)
             bo = src_to_out(float(force["banner_at"]), segs)
             split_out = [min(max(0.5, bo), max(0.5, content - 0.5))]
